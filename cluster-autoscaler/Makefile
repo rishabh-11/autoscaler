@@ -4,19 +4,20 @@ TAG?=dev
 FLAGS=
 ENVVAR=
 GOOS?=linux
+REGISTRY=eu.gcr.io/gardener-project/gardener/autoscaler
 
 deps:
 	go get github.com/tools/godep
 
 build: clean deps
-	$(ENVVAR) GOOS=$(GOOS) godep go build ./...
-	$(ENVVAR) GOOS=$(GOOS) godep go build -o cluster-autoscaler
+	go build ./...
+	go build -i -o cluster-autoscaler
 
 build-binary: clean deps
-	$(ENVVAR) GOOS=$(GOOS) godep go build -o cluster-autoscaler
+	go build -i -o cluster-autoscaler
 
 test-unit: clean deps build
-	$(ENVVAR) godep go test --test.short -race ./... $(FLAGS)
+	go test --test.short -race ./... $(FLAGS)
 
 dev-release: build-binary execute-release
 	echo "Release ${TAG} completed"
@@ -52,4 +53,3 @@ test-in-docker: clean docker-builder
 	docker run -v `pwd`:/gopath/src/k8s.io/autoscaler/cluster-autoscaler/ autoscaling-builder:latest bash -c 'cd /gopath/src/k8s.io/autoscaler/cluster-autoscaler && godep go test ./... '
 
 .PHONY: all deps build test-unit clean format execute-release dev-release docker-builder build-in-docker release generate
-

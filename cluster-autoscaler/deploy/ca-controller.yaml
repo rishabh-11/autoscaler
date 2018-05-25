@@ -2,24 +2,29 @@ apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
   name: cluster-autoscaler
+  namespace: {{CONTROL_NAMESPACE}}
   labels:
-    k8s-app: cluster-autoscaler
-    version: {{VERSION}}
+    app: cluster-autoscaler
 spec:
   replicas: 1
   selector:
     matchLabels:
-      k8s-app: cluster-autoscaler
-      version: {{VERSION}}
+      app: cluster-autoscaler
   template:
     metadata:
       labels:
-        k8s-app: cluster-autoscaler
-        version: {{VERSION}}
+        app: cluster-autoscaler
     spec:
       containers:
         - image: {{REGISTRY}}/cluster-autoscaler:{{VERSION}}
           name: cluster-autoscaler
+          env:
+            - name: CONTROL_NAMESPACE
+              value: /var/lib/configurations/control-namespace
+            - name: CONTROL_KUBECONFIG
+              value: /var/lib/configurations/control-kubeconfig
+            - name: TARGET_KUBECONFIG
+              value: /var/lib/configurations/target-kubeconfig
           resources:
             limits:
               cpu: 100m
@@ -29,15 +34,29 @@ spec:
               memory: 300Mi
           command:
             - ./cluster-autoscaler
-            - --v=4
+            - --kubeconfig={{TARGET_KUBECONFIG}}
+            - --cloud-provider=mcm
+            - --nodes={{MIN}}:{{MAX}}:{{CONTROL_NAMESPACE}}.{{WORKER_POOL}}
             - --stderrthreshold=info
-            - --nodes={{MIN}}:{{MAX}}:{{MIG_LINK}}
+            - --scale-down-unneeded-time=10s
+            - --skip-nodes-with-system-pods=false
+            - --skip-nodes-with-local-storage=false
+            - --scale-down-delay-after-add=10s
+            - --scale-down-delay-after-failure=10s
+            - --expander=least-waste
           volumeMounts:
             - name: ssl-certs
               mountPath: /etc/ssl/certs
+              readOnly: true
+            - mountPath: /var/lib/configurations
+              name: configurations
               readOnly: true
           imagePullPolicy: "Always"
       volumes:
         - name: ssl-certs
           hostPath:
             path: "/etc/ssl/certs"
+        - name: configurations
+          secret:
+            defaultMode: 420
+            secretName: {{SECRET_NAME}}
