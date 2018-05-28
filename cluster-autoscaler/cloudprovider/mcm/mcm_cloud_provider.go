@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/golang/glog"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -154,6 +155,9 @@ func ReferenceFromProviderID(m *McmManager, id string) (*Ref, error) {
 			break
 		}
 	}
+	if Name == "" {
+		return nil, fmt.Errorf("Could not find any machine corresponds to node %+v", id)
+	}
 	return &Ref{
 		Name:      Name,
 		Namespace: Namespace,
@@ -184,6 +188,7 @@ func (machinedeployment *MachineDeployment) MinSize() int {
 // number is different from the number of nodes registered in Kubernetes.
 func (machinedeployment *MachineDeployment) TargetSize() (int, error) {
 	size, err := machinedeployment.mcmManager.GetMachineDeploymentSize(machinedeployment)
+	glog.V(4).Info("Node group size returned ", size)
 	return int(size), err
 }
 
