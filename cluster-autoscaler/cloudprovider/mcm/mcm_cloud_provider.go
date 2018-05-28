@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/golang/glog"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -50,10 +49,25 @@ type mcmCloudProvider struct {
 
 // BuildMcmCloudProvider builds CloudProvider implementation for machine-controller-manager.
 func BuildMcmCloudProvider(mcmManager *McmManager, resourceLimiter *cloudprovider.ResourceLimiter) (cloudprovider.CloudProvider, error) {
+	if err := mcmManager.discoveryOpts.Validate(); err != nil {
+		return nil, fmt.Errorf("Failed to build an mcm cloud provider: %v", err)
+	}
+	if mcmManager.discoveryOpts.StaticDiscoverySpecified() {
+		return buildStaticallyDiscoveringProvider(mcmManager, mcmManager.discoveryOpts.NodeGroupSpecs, resourceLimiter)
+	}
+	return nil, fmt.Errorf("Failed to build an mcm cloud provider: Either node group specs or node group auto discovery spec must be specified")
+}
+
+func buildStaticallyDiscoveringProvider(mcmManager *McmManager, specs []string, resourceLimiter *cloudprovider.ResourceLimiter) (*mcmCloudProvider, error) {
 	mcm := &mcmCloudProvider{
 		mcmManager:         mcmManager,
 		machinedeployments: make([]*MachineDeployment, 0),
 		resourceLimiter:    resourceLimiter,
+	}
+	for _, spec := range specs {
+		if err := mcm.addNodeGroup(spec); err != nil {
+			return nil, err
+		}
 	}
 	return mcm, nil
 }
@@ -188,7 +202,6 @@ func (machinedeployment *MachineDeployment) MinSize() int {
 // number is different from the number of nodes registered in Kubernetes.
 func (machinedeployment *MachineDeployment) TargetSize() (int, error) {
 	size, err := machinedeployment.mcmManager.GetMachineDeploymentSize(machinedeployment)
-	glog.V(4).Info("Node group size returned ", size)
 	return int(size), err
 }
 
