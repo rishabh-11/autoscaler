@@ -49,10 +49,25 @@ type mcmCloudProvider struct {
 
 // BuildMcmCloudProvider builds CloudProvider implementation for machine-controller-manager.
 func BuildMcmCloudProvider(mcmManager *McmManager, resourceLimiter *cloudprovider.ResourceLimiter) (cloudprovider.CloudProvider, error) {
+	if err := mcmManager.discoveryOpts.Validate(); err != nil {
+		return nil, fmt.Errorf("Failed to build an mcm cloud provider: %v", err)
+	}
+	if mcmManager.discoveryOpts.StaticDiscoverySpecified() {
+		return buildStaticallyDiscoveringProvider(mcmManager, mcmManager.discoveryOpts.NodeGroupSpecs, resourceLimiter)
+	}
+	return nil, fmt.Errorf("Failed to build an mcm cloud provider: Either node group specs or node group auto discovery spec must be specified")
+}
+
+func buildStaticallyDiscoveringProvider(mcmManager *McmManager, specs []string, resourceLimiter *cloudprovider.ResourceLimiter) (*mcmCloudProvider, error) {
 	mcm := &mcmCloudProvider{
 		mcmManager:         mcmManager,
 		machinedeployments: make([]*MachineDeployment, 0),
 		resourceLimiter:    resourceLimiter,
+	}
+	for _, spec := range specs {
+		if err := mcm.addNodeGroup(spec); err != nil {
+			return nil, err
+		}
 	}
 	return mcm, nil
 }
@@ -153,6 +168,9 @@ func ReferenceFromProviderID(m *McmManager, id string) (*Ref, error) {
 			Namespace = machine.Namespace
 			break
 		}
+	}
+	if Name == "" {
+		return nil, fmt.Errorf("Could not find any machine corresponds to node %+v", id)
 	}
 	return &Ref{
 		Name:      Name,

@@ -31,12 +31,13 @@ import (
 	machineinformers "github.com/gardener/machine-controller-manager/pkg/client/informers/externalversions"
 	machinelisters "github.com/gardener/machine-controller-manager/pkg/client/listers/machine/v1alpha1"
 	corecontroller "github.com/gardener/machine-controller-manager/pkg/controller"
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
-	"k8s.io/autoscaler/cluster-autoscaler/config/dynamic"
-	"k8s.io/client-go/tools/clientcmd"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/golang/glog"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
+	"k8s.io/autoscaler/cluster-autoscaler/config/dynamic"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 const (
@@ -51,42 +52,53 @@ type McmManager struct {
 	interrupt               chan struct{}
 	discoveryOpts           cloudprovider.NodeGroupDiscoveryOptions
 	machineclient           machineapi.MachineV1alpha1Interface
+	coreclient              kubernetes.Interface
 	machineDeploymentLister machinelisters.MachineDeploymentLister
 	machinelisters          machinelisters.MachineLister
 }
 
 func createMCMManagerInternal(discoveryOpts cloudprovider.NodeGroupDiscoveryOptions) (*McmManager, error) {
 
-	//kubeconfig for the cluster for which machine-controller-manager will create machines.
-	kubeconfig, err := clientcmd.BuildConfigFromFlags("", "")
+	// controlKubeconfig for the cluster for which machine-controller-manager will create machines.
+	controlKubeconfig, err := clientcmd.BuildConfigFromFlags("", "")
 	if err != nil {
-		kubeconfigPath := os.Getenv("CONTROL_KUBECONFIG")
-		kubeconfig, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		controlKubeconfigPath := os.Getenv("CONTROL_KUBECONFIG")
+		controlKubeconfig, err = clientcmd.BuildConfigFromFlags("", controlKubeconfigPath)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	clientBuilder := corecontroller.SimpleClientBuilder{
-		ClientConfig: kubeconfig,
+	controlClientBuilder := corecontroller.SimpleClientBuilder{
+		ClientConfig: controlKubeconfig,
 	}
 
-	machineClient := clientBuilder.ClientOrDie("machine-controller-manager-client").MachineV1alpha1()
-
+	machineClient := controlClientBuilder.ClientOrDie("machine-controller-manager-client").MachineV1alpha1()
 	namespace := os.Getenv("CONTROL_NAMESPACE")
 	machineInformerFactory := machineinformers.NewFilteredSharedInformerFactory(
-		clientBuilder.ClientOrDie("machine-shared-informers"),
+		controlClientBuilder.ClientOrDie("machine-shared-informers"),
 		12*time.Hour,
 		namespace,
 		nil,
 	)
-
 	machineSharedInformers := machineInformerFactory.Machine().V1alpha1()
+
+	targetCoreKubeconfigPath := os.Getenv("TARGET_KUBECONFIG")
+	targetCoreKubeconfig, err := clientcmd.BuildConfigFromFlags("", targetCoreKubeconfigPath)
+	if err != nil {
+		return nil, err
+	}
+
+	targetCoreClient, err := kubernetes.NewForConfig(targetCoreKubeconfig)
+	if err != nil {
+		return nil, err
+	}
 
 	manager := &McmManager{
 		namespace:               namespace,
 		interrupt:               make(chan struct{}),
 		machineclient:           machineClient,
+		coreclient:              targetCoreClient,
 		machineDeploymentLister: machineSharedInformers.MachineDeployments().Lister(),
 		machinelisters:          machineSharedInformers.Machines().Lister(),
 		discoveryOpts:           discoveryOpts,
@@ -119,7 +131,7 @@ func (m *McmManager) GetMachineDeploymentForMachine(machine *Ref) (*MachineDeplo
 	for _, spec := range specs {
 		s, err := dynamic.SpecFromString(spec, true)
 		if err != nil {
-			fmt.Errorf("Error occured while parsing the spec")
+			return nil, fmt.Errorf("Error occured while parsing the spec")
 		}
 
 		str := strings.Split(s.Name, ".")
@@ -245,17 +257,26 @@ func (m *McmManager) GetMachineDeploymentNodes(machinedeployment *MachineDeploym
 	}
 	//machinelist, err := m.machinelisters.Machines(m.namespace).List(labels.Everything())
 	machinelist, err := m.machineclient.Machines(m.namespace).List(metav1.ListOptions{})
-
 	if err != nil {
 		return nil, fmt.Errorf("Unable to fetch list of Machine objects %v", err)
 	}
 
-	var nodes []string
-	for _, machine := range machinelist.Items {
-		if strings.Contains(machine.Name, md.Name) {
-			nodes = append(nodes, machine.Labels["node"])
-		}
+	nodelist, err := m.coreclient.Core().Nodes().List(metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("Unable to fetch list of Nodes %v", err)
 	}
 
+	var nodes []string
+	// Bearing O(n2) complexity, assuming we will not have lot of nodes/machines, open for optimisations.
+	for _, machine := range machinelist.Items {
+		if strings.Contains(machine.Name, md.Name) {
+			for _, node := range nodelist.Items {
+				if machine.Labels["node"] == node.Name {
+					nodes = append(nodes, node.Spec.ProviderID)
+					break
+				}
+			}
+		}
+	}
 	return nodes, nil
 }

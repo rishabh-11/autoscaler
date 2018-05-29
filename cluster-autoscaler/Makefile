@@ -19,7 +19,7 @@ build-binary: clean deps
 test-unit: clean deps build
 	go test --test.short -race ./... $(FLAGS)
 
-dev-release: build-binary execute-release
+dev-release: build-in-docker execute-release
 	echo "Release ${TAG} completed"
 
 execute-release:
