@@ -1,5 +1,5 @@
 {
-	"ImportPath": "k8s.io/autoscaler/cluster-autoscaler",
+	"ImportPath": "github.com/gardener/autoscaler/cluster-autoscaler",
 	"GoVersion": "go1.10",
 	"GodepVersion": "v80",
 	"Packages": [

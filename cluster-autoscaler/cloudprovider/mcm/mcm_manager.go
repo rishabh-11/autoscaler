@@ -34,8 +34,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/golang/glog"
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
-	"k8s.io/autoscaler/cluster-autoscaler/config/dynamic"
+	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
+	"github.com/gardener/autoscaler/cluster-autoscaler/config/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )

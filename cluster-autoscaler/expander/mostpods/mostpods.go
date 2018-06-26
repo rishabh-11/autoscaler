@@ -17,8 +17,8 @@ limitations under the License.
 package mostpods
 
 import (
-	"k8s.io/autoscaler/cluster-autoscaler/expander"
-	"k8s.io/autoscaler/cluster-autoscaler/expander/random"
+	"github.com/gardener/autoscaler/cluster-autoscaler/expander"
+	"github.com/gardener/autoscaler/cluster-autoscaler/expander/random"
 	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
 )
 

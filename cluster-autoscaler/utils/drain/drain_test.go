@@ -28,7 +28,7 @@ import (
 	policyv1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	. "k8s.io/autoscaler/cluster-autoscaler/utils/test"
+	. "github.com/gardener/autoscaler/cluster-autoscaler/utils/test"
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 	"k8s.io/kubernetes/pkg/api/testapi"

@@ -22,7 +22,7 @@ import (
 	"fmt"
 
 	apiv1 "k8s.io/api/core/v1"
-	kube_util "k8s.io/autoscaler/cluster-autoscaler/utils/kubernetes"
+	kube_util "github.com/gardener/autoscaler/cluster-autoscaler/utils/kubernetes"
 	informers "k8s.io/client-go/informers"
 	kube_client "k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/scheduler/algorithm"

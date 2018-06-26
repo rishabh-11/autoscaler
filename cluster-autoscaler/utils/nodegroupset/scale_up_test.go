@@ -19,8 +19,8 @@ package nodegroupset
 import (
 	"testing"
 
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
-	testprovider "k8s.io/autoscaler/cluster-autoscaler/cloudprovider/test"
+	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
+	testprovider "github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider/test"
 
 	"github.com/stretchr/testify/assert"
 )

@@ -21,11 +21,11 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/autoscaler/cluster-autoscaler/expander"
+	"github.com/gardener/autoscaler/cluster-autoscaler/expander"
 
 	apiv1 "k8s.io/api/core/v1"
-	testprovider "k8s.io/autoscaler/cluster-autoscaler/cloudprovider/test"
-	. "k8s.io/autoscaler/cluster-autoscaler/utils/test"
+	testprovider "github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider/test"
+	. "github.com/gardener/autoscaler/cluster-autoscaler/utils/test"
 	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
 
 	"github.com/stretchr/testify/assert"

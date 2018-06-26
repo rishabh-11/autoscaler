@@ -19,10 +19,10 @@ package core
 import (
 	"testing"
 
-	"k8s.io/autoscaler/cluster-autoscaler/clusterstate/utils"
-	"k8s.io/autoscaler/cluster-autoscaler/expander"
-	"k8s.io/autoscaler/cluster-autoscaler/simulator"
-	kube_util "k8s.io/autoscaler/cluster-autoscaler/utils/kubernetes"
+	"github.com/gardener/autoscaler/cluster-autoscaler/clusterstate/utils"
+	"github.com/gardener/autoscaler/cluster-autoscaler/expander"
+	"github.com/gardener/autoscaler/cluster-autoscaler/simulator"
+	kube_util "github.com/gardener/autoscaler/cluster-autoscaler/utils/kubernetes"
 
 	"github.com/stretchr/testify/assert"
 	"k8s.io/client-go/kubernetes/fake"

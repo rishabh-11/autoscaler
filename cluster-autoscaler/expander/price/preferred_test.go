@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	apiv1 "k8s.io/api/core/v1"
-	. "k8s.io/autoscaler/cluster-autoscaler/utils/test"
+	. "github.com/gardener/autoscaler/cluster-autoscaler/utils/test"
 
 	"github.com/stretchr/testify/assert"
 )
