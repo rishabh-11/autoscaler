@@ -28,15 +28,15 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
-	testprovider "k8s.io/autoscaler/cluster-autoscaler/cloudprovider/test"
-	"k8s.io/autoscaler/cluster-autoscaler/clusterstate"
-	"k8s.io/autoscaler/cluster-autoscaler/clusterstate/utils"
-	"k8s.io/autoscaler/cluster-autoscaler/config"
-	"k8s.io/autoscaler/cluster-autoscaler/simulator"
-	kube_util "k8s.io/autoscaler/cluster-autoscaler/utils/kubernetes"
-	scheduler_util "k8s.io/autoscaler/cluster-autoscaler/utils/scheduler"
-	. "k8s.io/autoscaler/cluster-autoscaler/utils/test"
+	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
+	testprovider "github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider/test"
+	"github.com/gardener/autoscaler/cluster-autoscaler/clusterstate"
+	"github.com/gardener/autoscaler/cluster-autoscaler/clusterstate/utils"
+	"github.com/gardener/autoscaler/cluster-autoscaler/config"
+	"github.com/gardener/autoscaler/cluster-autoscaler/simulator"
+	kube_util "github.com/gardener/autoscaler/cluster-autoscaler/utils/kubernetes"
+	scheduler_util "github.com/gardener/autoscaler/cluster-autoscaler/utils/scheduler"
+	. "github.com/gardener/autoscaler/cluster-autoscaler/utils/test"
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 
@@ -44,7 +44,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
-	"k8s.io/autoscaler/cluster-autoscaler/utils/deletetaint"
+	"github.com/gardener/autoscaler/cluster-autoscaler/utils/deletetaint"
 )
 
 func TestFindUnneededNodes(t *testing.T) {

@@ -22,10 +22,10 @@ import (
 
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	testprovider "k8s.io/autoscaler/cluster-autoscaler/cloudprovider/test"
-	"k8s.io/autoscaler/cluster-autoscaler/clusterstate/api"
-	"k8s.io/autoscaler/cluster-autoscaler/clusterstate/utils"
-	. "k8s.io/autoscaler/cluster-autoscaler/utils/test"
+	testprovider "github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider/test"
+	"github.com/gardener/autoscaler/cluster-autoscaler/clusterstate/api"
+	"github.com/gardener/autoscaler/cluster-autoscaler/clusterstate/utils"
+	. "github.com/gardener/autoscaler/cluster-autoscaler/utils/test"
 	"k8s.io/client-go/kubernetes/fake"
 	kube_record "k8s.io/client-go/tools/record"
 

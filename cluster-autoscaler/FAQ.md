@@ -722,11 +722,11 @@ the following hack makes the things easier to handle:
 3. Make sure that you use the correct branch/tag in `k8s.io/kubernetes`. For example, regular dev updates should be done against `k8s.io/kubernetes` HEAD, while updates in CA release branches should be done
    against the latest release tag of the corresponding `k8s.io/kubernetes` branch.
 4. Do `godep restore` in `k8s.io/kubernetes`.
-5. Remove Godeps and vendor from `k8s.io/autoscaler/cluster-autoscaler`.
+5. Remove Godeps and vendor from `github.com/gardener/autoscaler/cluster-autoscaler`.
 6. Invoke `fix-gopath.sh`. This will update `k8s.io/api`, `k8s.io/apimachinery` etc with the content of
    `k8s.io/kubernetes/staging` and remove all vendor directories from your gopath.
-7. Add some other dependencies if needed, and make sure that the code in `k8s.io/autoscaler/cluster-autoscaler` refers to them somehow (may be a blank import).
-8. Check if everything compiles with `go test ./...` in `k8s.io/autoscaler/cluster-autoscaler`.
-9. `godep save ./...` in `k8s.io/autoscaler/cluster-autoscaler`,
+7. Add some other dependencies if needed, and make sure that the code in `github.com/gardener/autoscaler/cluster-autoscaler` refers to them somehow (may be a blank import).
+8. Check if everything compiles with `go test ./...` in `github.com/gardener/autoscaler/cluster-autoscaler`.
+9. `godep save ./...` in `github.com/gardener/autoscaler/cluster-autoscaler`,
 10. Send a PR with 2 commits - one that covers `Godep` and `vendor/`, and the other one with all
    required real code changes.

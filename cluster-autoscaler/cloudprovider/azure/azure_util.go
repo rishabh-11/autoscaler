@@ -37,7 +37,7 @@ import (
 	"github.com/golang/glog"
 	"golang.org/x/crypto/pkcs12"
 
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
+	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
 	"k8s.io/client-go/pkg/version"
 )
 

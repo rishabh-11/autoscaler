@@ -17,15 +17,15 @@ limitations under the License.
 package factory
 
 import (
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
-	"k8s.io/autoscaler/cluster-autoscaler/expander"
-	"k8s.io/autoscaler/cluster-autoscaler/expander/mostpods"
-	"k8s.io/autoscaler/cluster-autoscaler/expander/price"
-	"k8s.io/autoscaler/cluster-autoscaler/expander/random"
-	"k8s.io/autoscaler/cluster-autoscaler/expander/waste"
-	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
+	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
+	"github.com/gardener/autoscaler/cluster-autoscaler/expander"
+	"github.com/gardener/autoscaler/cluster-autoscaler/expander/mostpods"
+	"github.com/gardener/autoscaler/cluster-autoscaler/expander/price"
+	"github.com/gardener/autoscaler/cluster-autoscaler/expander/random"
+	"github.com/gardener/autoscaler/cluster-autoscaler/expander/waste"
+	"github.com/gardener/autoscaler/cluster-autoscaler/utils/errors"
 
-	kube_util "k8s.io/autoscaler/cluster-autoscaler/utils/kubernetes"
+	kube_util "github.com/gardener/autoscaler/cluster-autoscaler/utils/kubernetes"
 )
 
 // ExpanderStrategyFromString creates an expander.Strategy according to its name
