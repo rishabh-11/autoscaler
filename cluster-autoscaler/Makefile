@@ -16,7 +16,7 @@ build: clean deps
 build-binary: clean deps
 	go build -i -o cluster-autoscaler
 
-test-unit: clean deps build
+test-unit:
 	go test --test.short -race ./... $(FLAGS)
 
 dev-release: build-in-docker execute-release

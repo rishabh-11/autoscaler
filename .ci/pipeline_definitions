@@ -17,15 +17,15 @@ autoscaler:
                 build: ~
             registry: 'gcr-readwrite'
             image: 'eu.gcr.io/gardener-project/gardener/autoscaler/cluster-autoscaler'
-            dockerfile: 'cluster-autoscaler/Dockerfile'
+            dockerfile: 'Dockerfile'
             dir: 'cluster-autoscaler'
     steps:
       check:
-        image: 'golang:1.9.4'
+        image: 'autoscaling-builder:latest'
       test:
-        image: 'eu.gcr.io/gardener-project/cc/job-image-golang-1-9-4:0.21.0'
+        image: 'autoscaling-builder:latest'
       build:
-        image: 'golang:1.9.4'
+        image: 'autoscaling-builder:latest'
         output_dir: 'binary'
   variants:
     head-update: ~
