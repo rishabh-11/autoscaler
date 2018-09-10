@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Gardener Authors.
+Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,8 +22,8 @@ import (
 	"fmt"
 	"strings"
 
-	v1alpha1 "github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
+	v1alpha1 "github.com/gardener/machine-controller-manager/pkg/apis/cluster/v1alpha1"
+	corev1 "k8s.io2/api/core/v1"
 
 	"github.com/Azure/azure-sdk-for-go/arm/compute"
 	"github.com/Azure/azure-sdk-for-go/arm/disk"
@@ -76,6 +76,9 @@ func (d *AzureDriver) Create() (string, string, error) {
 		"",
 	)
 	err = onErrorFail(err, fmt.Sprintf("subnetClient.Get failed for subnet %q", subnet.Name))
+	if err != nil {
+		return "Error", "Error", err
+	}
 
 	enableIPForwarding := true
 	nicParameters := network.Interface{
@@ -94,11 +97,28 @@ func (d *AzureDriver) Create() (string, string, error) {
 		},
 		Tags: &tagList,
 	}
-	cancel := make(chan struct{})
+
+	var cancel chan struct{}
+
 	_, errChan := interfacesClient.CreateOrUpdate(resourceGroup, nicName, nicParameters, cancel)
 	err = onErrorFail(<-errChan, fmt.Sprintf("interfacesClient.CreateOrUpdate for NIC '%s' failed", nicName))
+	if err != nil {
+		return "Error", "Error", err
+	}
+
 	nicParameters, err = interfacesClient.Get(resourceGroup, nicName, "")
 	err = onErrorFail(err, fmt.Sprintf("interfaces.Get for NIC '%s' failed", nicName))
+	if err != nil {
+		// Delete the created NIC
+		_, errChan = interfacesClient.Delete(resourceGroup, nicName, cancel)
+		errNIC := onErrorFail(<-errChan, fmt.Sprintf("Getting NIC details failed, inturn deletion for corresponding newly created NIC '%s' failed", nicName))
+		if errNIC != nil {
+			// When deletion of NIC returns an error
+			return "Error", "Error", errNIC
+		}
+
+		return "Error", "Error", err
+	}
 
 	vm := compute.VirtualMachine{
 		Location: &location,
@@ -155,9 +175,21 @@ func (d *AzureDriver) Create() (string, string, error) {
 		},
 		Tags: &tagList,
 	}
+
+	cancel = nil
 	_, errChan = vmClient.CreateOrUpdate(resourceGroup, vmName, vm, cancel)
 	err = onErrorFail(<-errChan, "createVM failed")
-	//glog.Infof("Created machine '%s' successfully\n", vmName)
+	if err != nil {
+		// Delete the created NIC
+		_, errChan = interfacesClient.Delete(resourceGroup, nicName, cancel)
+		errNIC := onErrorFail(<-errChan, fmt.Sprintf("Creation of VM failed, inturn deletion for corresponding newly created NIC '%s' failed", nicName))
+		if errNIC != nil {
+			// When deletion of NIC returns an error
+			return "Error", "Error", errNIC
+		}
+
+		return "Error", "Error", err
+	}
 
 	return d.encodeMachineID(location, vmName), vmName, err
 }
@@ -443,16 +475,16 @@ func (d *AzureDriver) getdisks(machineID string, listOfVMs VMs) error {
 }
 
 func (d *AzureDriver) setup() {
-	subscriptionID := strings.TrimSpace(string(d.CloudConfig.Data["azureSubscriptionId"]))
+	subscriptionID := strings.TrimSpace(string(d.CloudConfig.Data[v1alpha1.AzureSubscriptionID]))
 	authorizer, err := d.getAuthorizer(azure.PublicCloud)
 	onErrorFail(err, "utils.GetAuthorizer failed")
 	createClients(subscriptionID, authorizer)
 }
 
 func (d *AzureDriver) getAuthorizer(env azure.Environment) (*autorest.BearerAuthorizer, error) {
-	tenantID := strings.TrimSpace(string(d.CloudConfig.Data["azureTenantId"]))
-	clientID := strings.TrimSpace(string(d.CloudConfig.Data["azureClientId"]))
-	clientSecret := strings.TrimSpace(string(d.CloudConfig.Data["azureClientSecret"]))
+	tenantID := strings.TrimSpace(string(d.CloudConfig.Data[v1alpha1.AzureTenantID]))
+	clientID := strings.TrimSpace(string(d.CloudConfig.Data[v1alpha1.AzureClientID]))
+	clientSecret := strings.TrimSpace(string(d.CloudConfig.Data[v1alpha1.AzureClientSecret]))
 
 	oauthConfig, err := adal.NewOAuthConfig(env.ActiveDirectoryEndpoint, tenantID)
 	if err != nil {

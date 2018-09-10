@@ -1,0 +1,11 @@
+{
+  "Rules": [
+    {
+      "SelectorRegexp": "k8s[.]io",
+      "AllowedPrefixes": [
+        "k8s.io2/gengo",
+        "k8s.io2/kubernetes/third_party/forked/golang"
+      ]
+    }
+  ]
+}

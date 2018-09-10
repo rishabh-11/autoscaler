@@ -16,7 +16,7 @@ limitations under the License.
 This file was copied and modified from the kubernetes/kubernetes project
 https://github.com/kubernetes/kubernetes/blob/release-1.8/pkg/client/metrics/prometheus/prometheus.go
 
-Modifications Copyright 2018 The Gardener Authors.
+Modifications Copyright (c) 2018 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 // Package prometheus creates and registers prometheus metrics with
@@ -27,7 +27,7 @@ import (
 	"net/url"
 	"time"
 
-	"k8s.io/client-go/tools/metrics"
+	"k8s.io2/client-go/tools/metrics"
 
 	"github.com/prometheus/client_golang/prometheus"
 )

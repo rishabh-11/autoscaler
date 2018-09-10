@@ -16,7 +16,7 @@ limitations under the License.
 This file was copied and modified from the kubernetes/kubernetes project
 https://github.com/kubernetes/kubernetes/release-1.8/pkg/controller/controller_utils.go
 
-Modifications Copyright 2017 The Gardener Authors.
+Modifications Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 // Package controller is used to provide the core functionalities of machine-controller-manager
@@ -32,27 +32,27 @@ import (
 	"sync/atomic"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/validation"
+	"k8s.io2/apimachinery/pkg/api/validation"
 
-	"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
-	machineapi "github.com/gardener/machine-controller-manager/pkg/client/clientset/versioned/typed/machine/v1alpha1"
+	"github.com/gardener/machine-controller-manager/pkg/apis/cluster/v1alpha1"
+	machineapi "github.com/gardener/machine-controller-manager/pkg/client/clientset/versioned/typed/cluster/v1alpha1"
 	hashutil "github.com/gardener/machine-controller-manager/pkg/util/hash"
 	taintutils "github.com/gardener/machine-controller-manager/pkg/util/taints"
-	"k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/clock"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
-	"k8s.io/apimachinery/pkg/util/wait"
-	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
-	clientretry "k8s.io/client-go/util/retry"
+	"k8s.io2/api/core/v1"
+	"k8s.io2/apimachinery/pkg/api/meta"
+	metav1 "k8s.io2/apimachinery/pkg/apis/meta/v1"
+	"k8s.io2/apimachinery/pkg/labels"
+	"k8s.io2/apimachinery/pkg/runtime"
+	"k8s.io2/apimachinery/pkg/types"
+	"k8s.io2/apimachinery/pkg/util/clock"
+	utilruntime "k8s.io2/apimachinery/pkg/util/runtime"
+	"k8s.io2/apimachinery/pkg/util/sets"
+	"k8s.io2/apimachinery/pkg/util/strategicpatch"
+	"k8s.io2/apimachinery/pkg/util/wait"
+	clientset "k8s.io2/client-go/kubernetes"
+	"k8s.io2/client-go/tools/cache"
+	"k8s.io2/client-go/tools/record"
+	clientretry "k8s.io2/client-go/util/retry"
 
 	"github.com/golang/glog"
 )
@@ -415,7 +415,7 @@ type MachineSetControlInterface interface {
 
 // RealMachineSetControl is the default implementation of RSControllerInterface.
 type RealMachineSetControl struct {
-	controlMachineClient machineapi.MachineV1alpha1Interface
+	controlMachineClient machineapi.ClusterV1alpha1Interface
 	Recorder             record.EventRecorder
 }
 
@@ -471,7 +471,7 @@ func validateControllerRef(controllerRef *metav1.OwnerReference) error {
 
 // RealMachineControl is the default implementation of machineControlInterface.
 type RealMachineControl struct {
-	controlMachineClient machineapi.MachineV1alpha1Interface
+	controlMachineClient machineapi.ClusterV1alpha1Interface
 	Recorder             record.EventRecorder
 }
 
@@ -552,7 +552,7 @@ func GetMachineFromTemplate(template *v1alpha1.MachineTemplateSpec, parentObject
 			Finalizers:   desiredFinalizers,
 		},
 		Spec: v1alpha1.MachineSpec{
-			Class: template.Spec.Class,
+			ProviderConfig: template.Spec.ProviderConfig,
 		},
 	}
 	if controllerRef != nil {
@@ -746,7 +746,7 @@ func (o MachineSetsBySizeOlder) Less(i, j int) bool {
 	if (o[i].Spec.Replicas) == (o[j].Spec.Replicas) {
 		return MachineSetsByCreationTimestamp(o).Less(int(i), int(j))
 	}
-	return (o[i].Spec.Replicas) > (o[j].Spec.Replicas)
+	return *(o[i].Spec.Replicas) > *(o[j].Spec.Replicas)
 }
 
 // MachineSetsBySizeNewer sorts a list of MachineSet by size in descending order, using their creation timestamp or name as a tie breaker.
@@ -759,13 +759,13 @@ func (o MachineSetsBySizeNewer) Less(i, j int) bool {
 	if (o[i].Spec.Replicas) == (o[j].Spec.Replicas) {
 		return MachineSetsByCreationTimestamp(o).Less(j, i)
 	}
-	return (o[i].Spec.Replicas) > (o[j].Spec.Replicas)
+	return *(o[i].Spec.Replicas) > *(o[j].Spec.Replicas)
 }
 
 // FilterActiveMachineSets returns machine sets that have (or at least ought to have) machines.
 func FilterActiveMachineSets(machineSets []*v1alpha1.MachineSet) []*v1alpha1.MachineSet {
 	activeFilter := func(is *v1alpha1.MachineSet) bool {
-		return is != nil && (is.Spec.Replicas) > 0
+		return is != nil && *(is.Spec.Replicas) > 0
 	}
 	return FilterMachineSets(machineSets, activeFilter)
 }

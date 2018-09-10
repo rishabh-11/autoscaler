@@ -16,7 +16,7 @@ limitations under the License.
 This file was copied and modified from the kubernetes/kubernetes project
 https://github.com/kubernetes/kubernetes/release-1.8/pkg/controller/deployment/rollback.go
 
-Modifications Copyright 2017 The Gardener Authors.
+Modifications Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 // Package controller is used to provide the core functionalities of machine-controller-manager
@@ -27,9 +27,9 @@ import (
 
 	"github.com/golang/glog"
 
-	"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
-	"k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
+	"github.com/gardener/machine-controller-manager/pkg/apis/cluster/v1alpha1"
+	"k8s.io2/api/core/v1"
+	"k8s.io2/apimachinery/pkg/types"
 )
 
 // rollback the deployment to the specified revision. In any case cleanup the rollback spec.

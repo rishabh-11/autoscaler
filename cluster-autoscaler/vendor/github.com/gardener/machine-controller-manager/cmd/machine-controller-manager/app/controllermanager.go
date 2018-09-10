@@ -16,7 +16,7 @@ limitations under the License.
 This file was copied and modified from the kubernetes/kubernetes project
 https://github.com/kubernetes/kubernetes/release-1.8/cmd/kube-controller-manager/app/controllermanager.go
 
-Modifications Copyright 2017 The Gardener Authors.
+Modifications Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 package app
@@ -39,6 +39,7 @@ import (
 	kubescheme "k8s.io/client-go/kubernetes/scheme"
 
 	"github.com/gardener/machine-controller-manager/cmd/machine-controller-manager/app/options"
+	"github.com/gardener/machine-controller-manager/pkg/handlers"
 	"github.com/gardener/machine-controller-manager/pkg/util/configz"
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
@@ -46,7 +47,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/apiserver/pkg/server/healthz"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -63,10 +63,7 @@ const (
 	controllerDiscoveryAgentName = "machine-controller-discovery"
 )
 
-var openStackGVR = schema.GroupVersionResource{Group: "machine.sapcloud.io", Version: "v1alpha1", Resource: "openstackmachineclasses"}
-var awsGVR = schema.GroupVersionResource{Group: "machine.sapcloud.io", Version: "v1alpha1", Resource: "awsmachineclasses"}
-var azureGVR = schema.GroupVersionResource{Group: "machine.sapcloud.io", Version: "v1alpha1", Resource: "azuremachineclasses"}
-var gcpGVR = schema.GroupVersionResource{Group: "machine.sapcloud.io", Version: "v1alpha1", Resource: "gcpmachineclasses"}
+var machineClassGVR = schema.GroupVersionResource{Group: "cluster.k8s.io", Version: "v1alpha1", Resource: "machineclasses"}
 
 // Run runs the MCMServer.  This should never exit.
 func Run(s *options.MCMServer) error {
@@ -192,8 +189,8 @@ func StartControllers(s *options.MCMServer,
 	controlCoreKubeconfig *rest.Config,
 	targetCoreKubeconfig *rest.Config,
 	controlMachineClientBuilder machinecontroller.ClientBuilder,
-	controlCoreClientBuilder corecontroller.ControllerClientBuilder,
-	targetCoreClientBuilder corecontroller.ControllerClientBuilder,
+	controlCoreClientBuilder corecontroller.ClientBuilder,
+	targetCoreClientBuilder corecontroller.ClientBuilder,
 	recorder record.EventRecorder,
 	stop <-chan struct{}) error {
 
@@ -203,7 +200,7 @@ func StartControllers(s *options.MCMServer,
 		return err
 	}
 
-	controlMachineClient := controlMachineClientBuilder.ClientOrDie(controllerManagerAgentName).MachineV1alpha1()
+	controlMachineClient := controlMachineClientBuilder.ClientOrDie(controllerManagerAgentName).ClusterV1alpha1()
 
 	controlCoreKubeconfig = rest.AddUserAgent(controlCoreKubeconfig, controllerManagerAgentName)
 	controlCoreClient, err := kubernetes.NewForConfig(controlCoreKubeconfig)
@@ -217,7 +214,7 @@ func StartControllers(s *options.MCMServer,
 		glog.Fatal(err)
 	}
 
-	if availableResources[awsGVR] || availableResources[azureGVR] || availableResources[gcpGVR] || availableResources[openStackGVR] {
+	if availableResources[machineClassGVR] {
 		glog.V(5).Infof("Creating shared informers; resync interval: %v", s.MinResyncPeriod)
 
 		controlMachineInformerFactory := machineinformers.NewFilteredSharedInformerFactory(
@@ -227,9 +224,11 @@ func StartControllers(s *options.MCMServer,
 			nil,
 		)
 
-		controlCoreInformerFactory := coreinformers.NewSharedInformerFactory(
+		controlCoreInformerFactory := coreinformers.NewFilteredSharedInformerFactory(
 			controlCoreClientBuilder.ClientOrDie("control-core-shared-informers"),
 			s.MinResyncPeriod.Duration,
+			s.Namespace,
+			nil,
 		)
 
 		targetCoreInformerFactory := coreinformers.NewSharedInformerFactory(
@@ -238,7 +237,7 @@ func StartControllers(s *options.MCMServer,
 		)
 
 		// All shared informers are v1alpha1 API level
-		machineSharedInformers := controlMachineInformerFactory.Machine().V1alpha1()
+		machineSharedInformers := controlMachineInformerFactory.Cluster().V1alpha1()
 
 		glog.V(5).Infof("Creating controllers...")
 		machineController, err := machinecontroller.NewController(
@@ -248,10 +247,7 @@ func StartControllers(s *options.MCMServer,
 			targetCoreClient,
 			controlCoreInformerFactory.Core().V1().Secrets(),
 			targetCoreInformerFactory.Core().V1().Nodes(),
-			machineSharedInformers.OpenStackMachineClasses(),
-			machineSharedInformers.AWSMachineClasses(),
-			machineSharedInformers.AzureMachineClasses(),
-			machineSharedInformers.GCPMachineClasses(),
+			machineSharedInformers.MachineClasses(),
 			machineSharedInformers.Machines(),
 			machineSharedInformers.MachineSets(),
 			machineSharedInformers.MachineDeployments(),
@@ -271,7 +267,7 @@ func StartControllers(s *options.MCMServer,
 		go machineController.Run(int(s.ConcurrentNodeSyncs), stop)
 
 	} else {
-		return fmt.Errorf("unable to start machine controller: API GroupVersion %q or %q or %q or %q is not available; found %#v", awsGVR, azureGVR, gcpGVR, openStackGVR, availableResources)
+		return fmt.Errorf("unable to start machine controller: API GroupVersion %q is not available; found %#v", machineClassGVR, availableResources)
 	}
 
 	select {}
@@ -280,7 +276,7 @@ func StartControllers(s *options.MCMServer,
 // TODO: In general, any controller checking this needs to be dynamic so
 //  users don't have to restart their controller manager if they change the apiserver.
 // Until we get there, the structure here needs to be exposed for the construction of a proper ControllerContext.
-func getAvailableResources(clientBuilder corecontroller.ControllerClientBuilder) (map[schema.GroupVersionResource]bool, error) {
+func getAvailableResources(clientBuilder corecontroller.ClientBuilder) (map[schema.GroupVersionResource]bool, error) {
 	var discoveryClient discovery.DiscoveryInterface
 
 	var healthzContent string
@@ -341,7 +337,6 @@ func createRecorder(kubeClient *kubernetes.Clientset) record.EventRecorder {
 
 func startHTTP(s *options.MCMServer) {
 	mux := http.NewServeMux()
-	healthz.InstallHandler(mux)
 	if s.EnableProfiling {
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
 		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
@@ -353,6 +348,7 @@ func startHTTP(s *options.MCMServer) {
 	}
 	configz.InstallHandler(mux)
 	mux.Handle("/metrics", prometheus.Handler())
+	mux.HandleFunc("/healthz", handlers.Healthz)
 
 	server := &http.Server{
 		Addr:    net.JoinHostPort(s.Address, strconv.Itoa(int(s.Port))),

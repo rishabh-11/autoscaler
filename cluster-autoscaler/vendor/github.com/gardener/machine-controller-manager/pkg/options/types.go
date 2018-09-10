@@ -1,3 +1,20 @@
+/*
+Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// Package options is used to specify options to MCM
 package options
 
 import (
@@ -20,7 +37,7 @@ type ClientConnectionConfiguration struct {
 	Burst int
 }
 
-// MachineControllerManagerConfiguration ff
+// MachineControllerManagerConfiguration contains machine configurations
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type MachineControllerManagerConfiguration struct {
 	metav1.TypeMeta
@@ -68,7 +85,8 @@ type SafetyOptions struct {
 	SafetyUp int32
 	// SafetyDown
 	SafetyDown int32
-	// Timeout (in minutes) used while creation/failing of machine before it is declared as failed
+	// Timeout (in minutes) used while creation/failing of
+	// machine before it is declared as failed
 	MachineHealthTimeout int32
 	// Timeout (in minutes) used while draining of machine before deletion,
 	// beyond which it forcefully deletes machine
@@ -76,6 +94,12 @@ type SafetyOptions struct {
 	// Timeout (in minutes) used while scaling machineSet
 	// if timeout occurs machineSet is permanently frozen
 	MachineSetScaleTimeout int32
+	// Period (in minutes) used to poll for orphan VMs
+	// by safety controller
+	MachineSafetyOrphanVMsPeriod int32
+	// Period (in minutes) used to poll for overshooting
+	// of machine objects backing a machineSet by safety controller
+	MachineSafetyOvershootingPeriod int32
 }
 
 // LeaderElectionConfiguration defines the configuration of leader election

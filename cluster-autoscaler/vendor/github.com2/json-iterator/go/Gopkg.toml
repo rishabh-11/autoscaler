@@ -1,0 +1,26 @@
+# Gopkg.toml example
+#
+# Refer to https://github.com/golang/dep/blob/master/docs/Gopkg.toml.md
+# for detailed Gopkg.toml documentation.
+#
+# required = ["github.com2/user/thing/cmd/thing"]
+# ignored = ["github.com2/user/project/pkgX", "bitbucket.org/user/project/pkgA/pkgY"]
+#
+# [[constraint]]
+#   name = "github.com2/user/project"
+#   version = "1.0.0"
+#
+# [[constraint]]
+#   name = "github.com2/user/project2"
+#   branch = "dev"
+#   source = "github.com2/myfork/project2"
+#
+# [[override]]
+#  name = "github.com2/x/y"
+#  version = "2.4.0"
+
+ignored = ["github.com2/davecgh/go-spew*","github.com2/google/gofuzz*","github.com2/stretchr/testify*"]
+
+[[constraint]]
+  name = "github.com2/modern-go/reflect2"
+  version = "1.0.0"

@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Gardener Authors.
+Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,8 +23,8 @@ import (
 	"fmt"
 	"strings"
 
-	v1alpha1 "github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
+	v1alpha1 "github.com/gardener/machine-controller-manager/pkg/apis/cluster/v1alpha1"
+	corev1 "k8s.io2/api/core/v1"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -76,6 +76,9 @@ func (d *AWSDriver) Create() (string, string, error) {
 			VolumeSize: &volumeSize,
 			VolumeType: &volumeType,
 		},
+	}
+	if volumeType == "io1" {
+		blkDeviceMapping.Ebs.Iops = &d.AWSMachineClass.Spec.BlockDevices[0].Ebs.Iops
 	}
 	blkDeviceMappings = append(blkDeviceMappings, &blkDeviceMapping)
 
@@ -265,8 +268,8 @@ func (d *AWSDriver) GetVMs(machineID string) (VMs, error) {
 // Helper function to create SVC
 func (d *AWSDriver) createSVC() *ec2.EC2 {
 
-	accessKeyID := strings.TrimSpace(string(d.CloudConfig.Data["providerAccessKeyId"]))
-	secretAccessKey := strings.TrimSpace(string(d.CloudConfig.Data["providerSecretAccessKey"]))
+	accessKeyID := strings.TrimSpace(string(d.CloudConfig.Data[v1alpha1.AWSAccessKeyID]))
+	secretAccessKey := strings.TrimSpace(string(d.CloudConfig.Data[v1alpha1.AWSSecretAccessKey]))
 
 	if accessKeyID != "" && secretAccessKey != "" {
 		return ec2.New(session.New(&aws.Config{

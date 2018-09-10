@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Gardener Authors.
+Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,14 +25,14 @@ import (
 	"strings"
 	"time"
 
-	v1alpha1 "github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
+	v1alpha1 "github.com/gardener/machine-controller-manager/pkg/apis/cluster/v1alpha1"
 	"github.com/golang/glog"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
+	corev1 "k8s.io2/api/core/v1"
+	"k8s.io2/apimachinery/pkg/util/wait"
 )
 
 // GCPDriver is the driver struct for holding GCP machine information
@@ -51,7 +51,7 @@ func (d *GCPDriver) Create() (string, string, error) {
 		return "Error", "Error", err
 	}
 
-	project, err := extractProject(d.CloudConfig.Data["serviceAccountJSON"])
+	project, err := extractProject(d.CloudConfig.Data[v1alpha1.GCPServiceAccountJSON])
 	if err != nil {
 		return "Error", "Error", err
 	}
@@ -213,7 +213,7 @@ func (d *GCPDriver) GetVMs(machineID string) (VMs, error) {
 		return listOfVMs, err
 	}
 
-	project, err := extractProject(d.CloudConfig.Data["serviceAccountJSON"])
+	project, err := extractProject(d.CloudConfig.Data[v1alpha1.GCPServiceAccountJSON])
 	if err != nil {
 		glog.Error(err)
 		return listOfVMs, err
@@ -259,7 +259,7 @@ func (d *GCPDriver) GetVMs(machineID string) (VMs, error) {
 func (d *GCPDriver) createComputeService() (context.Context, *compute.Service, error) {
 	ctx := context.Background()
 
-	jwt, err := google.JWTConfigFromJSON(d.CloudConfig.Data["serviceAccountJSON"], compute.CloudPlatformScope)
+	jwt, err := google.JWTConfigFromJSON(d.CloudConfig.Data[v1alpha1.GCPServiceAccountJSON], compute.CloudPlatformScope)
 	if err != nil {
 		return nil, nil, err
 	}

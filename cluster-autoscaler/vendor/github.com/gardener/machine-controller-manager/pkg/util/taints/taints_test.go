@@ -16,7 +16,7 @@ limitations under the License.
 This file was copied and modified from the kubernetes/kubernetes project
 https://github.com/kubernetes/kubernetes/blob/release-1.8/pkg/util/taints/taints_test.go
 
-Modifications Copyright 2018 The Gardener Authors.
+Modifications Copyright (c) 2018 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 package taints
@@ -26,7 +26,7 @@ import (
 	"strings"
 	"testing"
 
-	"k8s.io/api/core/v1"
+	"k8s.io2/api/core/v1"
 
 	"github.com/spf13/pflag"
 )
@@ -62,7 +62,7 @@ func TestTaintsVar(t *testing.T) {
 		args := append([]string{"test"}, strings.Fields(c.f)...)
 		cli := pflag.NewFlagSet("test", pflag.ContinueOnError)
 		var taints []v1.Taint
-		cli.Var(NewTaintsVar(&taints), "t", "bar")
+		cli.Var(NewVar(&taints), "t", "bar")
 
 		err := cli.Parse(args)
 		if err == nil && c.err {

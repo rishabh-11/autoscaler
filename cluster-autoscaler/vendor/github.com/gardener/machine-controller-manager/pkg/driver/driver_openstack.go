@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Gardener Authors.
+Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,13 +24,14 @@ import (
 	"net/http"
 	"strings"
 
-	v1alpha1 "github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
+	v1alpha1 "github.com/gardener/machine-controller-manager/pkg/apis/cluster/v1alpha1"
 	"github.com/golang/glog"
-	corev1 "k8s.io/api/core/v1"
+	corev1 "k8s.io2/api/core/v1"
 
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/keypairs"
+	"github.com/gophercloud/gophercloud/openstack/compute/v2/images"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/pagination"
 )
@@ -62,11 +63,16 @@ func (d *OpenStackDriver) Create() (string, string, error) {
 
 	var createOpts servers.CreateOptsBuilder
 
+	imageRef, err := d.recentImageIDFromName(client, imageName)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get image id for image name %s: %s", imageName, err)
+	}
+
 	createOpts = &servers.CreateOpts{
 		ServiceClient:    client,
 		Name:             d.MachineName,
 		FlavorName:       flavorName,
-		ImageName:        imageName,
+		ImageRef:         imageRef,
 		Networks:         []servers.Network{{UUID: networkID}},
 		SecurityGroups:   securityGroups,
 		Metadata:         metadata,
@@ -89,7 +95,6 @@ func (d *OpenStackDriver) Create() (string, string, error) {
 
 // Delete method is used to delete an OS machine
 func (d *OpenStackDriver) Delete() error {
-
 	res, err := d.GetVMs(d.MachineID)
 	if err != nil {
 		return err
@@ -194,34 +199,34 @@ func (d *OpenStackDriver) createNovaClient() (*gophercloud.ServiceClient, error)
 
 	config := &tls.Config{}
 
-	authURL, ok := d.CloudConfig.Data["authURL"]
+	authURL, ok := d.CloudConfig.Data[v1alpha1.OpenStackAuthURL]
 	if !ok {
-		return nil, fmt.Errorf("missing auth_url in secret")
+		return nil, fmt.Errorf("missing %s in secret", v1alpha1.OpenStackAuthURL)
 	}
-	username, ok := d.CloudConfig.Data["username"]
+	username, ok := d.CloudConfig.Data[v1alpha1.OpenStackUsername]
 	if !ok {
-		return nil, fmt.Errorf("missing username in secret")
+		return nil, fmt.Errorf("missing %s in secret", v1alpha1.OpenStackUsername)
 	}
-	password, ok := d.CloudConfig.Data["password"]
+	password, ok := d.CloudConfig.Data[v1alpha1.OpenStackPassword]
 	if !ok {
-		return nil, fmt.Errorf("missing password in secret")
+		return nil, fmt.Errorf("missing %s in secret", v1alpha1.OpenStackPassword)
 	}
-	domainName, ok := d.CloudConfig.Data["domainName"]
+	domainName, ok := d.CloudConfig.Data[v1alpha1.OpenStackDomainName]
 	if !ok {
-		return nil, fmt.Errorf("missing domainName in secret")
+		return nil, fmt.Errorf("missing %s in secret", v1alpha1.OpenStackDomainName)
 	}
-	region := d.OpenStackMachineClass.Spec.Region
-	tenantName, ok := d.CloudConfig.Data["tenantName"]
+	tenantName, ok := d.CloudConfig.Data[v1alpha1.OpenStackTenantName]
 	if !ok {
-		return nil, fmt.Errorf("missing tenantName in secret")
+		return nil, fmt.Errorf("missing %s in secret", v1alpha1.OpenStackTenantName)
 	}
 
-	caCert, ok := d.CloudConfig.Data["caCert"]
+	region := d.OpenStackMachineClass.Spec.Region
+	caCert, ok := d.CloudConfig.Data[v1alpha1.OpenStackCACert]
 	if !ok {
 		caCert = nil
 	}
 
-	insecure, ok := d.CloudConfig.Data["insecure"]
+	insecure, ok := d.CloudConfig.Data[v1alpha1.OpenStackInsecure]
 	if ok && strings.TrimSpace(string(insecure)) == "true" {
 		config.InsecureSkipVerify = true
 	}
@@ -232,9 +237,9 @@ func (d *OpenStackDriver) createNovaClient() (*gophercloud.ServiceClient, error)
 		config.RootCAs = caCertPool
 	}
 
-	clientCert, ok := d.CloudConfig.Data["clientCert"]
+	clientCert, ok := d.CloudConfig.Data[v1alpha1.OpenStackClientCert]
 	if ok {
-		clientKey, ok := d.CloudConfig.Data["clientKey"]
+		clientKey, ok := d.CloudConfig.Data[v1alpha1.OpenStackClientKey]
 		if ok {
 			cert, err := tls.X509KeyPair([]byte(clientCert), []byte(clientKey))
 			if err != nil {
@@ -243,7 +248,7 @@ func (d *OpenStackDriver) createNovaClient() (*gophercloud.ServiceClient, error)
 			config.Certificates = []tls.Certificate{cert}
 			config.BuildNameToCertificate()
 		} else {
-			return nil, fmt.Errorf("client key missing in secret")
+			return nil, fmt.Errorf("%s missing in secret", v1alpha1.OpenStackClientKey)
 		}
 	}
 
@@ -286,4 +291,21 @@ func (d *OpenStackDriver) encodeMachineID(region string, machineID string) strin
 func (d *OpenStackDriver) decodeMachineID(id string) string {
 	splitProviderID := strings.Split(id, "/")
 	return splitProviderID[len(splitProviderID)-1]
+}
+
+func (d *OpenStackDriver) recentImageIDFromName(client *gophercloud.ServiceClient, imageName string) (string, error) {
+	allPages, err := images.ListDetail(client, nil).AllPages()
+	if err != nil {
+		return "", err
+	}
+	all, err := images.ExtractImages(allPages)
+	if err != nil {
+		return "", err
+	}
+	for _, f := range all {
+		if f.Name == imageName {
+			return f.ID, nil
+		}
+	}
+	return "", fmt.Errorf("could not find an image id for image name %s", imageName)
 }

@@ -16,7 +16,7 @@ limitations under the License.
 This file was copied and modified from the kubernetes/kubernetes project
 https://github.com/kubernetes/kubernetes/release-1.8/pkg/controller/deployment/progress.go
 
-Modifications Copyright 2017 The Gardener Authors.
+Modifications Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 // Package controller is used to provide the core functionalities of machine-controller-manager
@@ -29,7 +29,7 @@ import (
 
 	"github.com/golang/glog"
 
-	"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
+	"github.com/gardener/machine-controller-manager/pkg/apis/cluster/v1alpha1"
 )
 
 // syncRolloutStatus updates the status of a deployment during a rollout. There are
@@ -197,6 +197,6 @@ func (dc *controller) requeueStuckMachineDeployment(d *v1alpha1.MachineDeploymen
 	glog.V(4).Infof("Queueing up machine deployment %q for a progress check after %ds", d.Name, int(after.Seconds()))
 	// Add a second to avoid milliseconds skew in AddAfter.
 	// See https://github.com/kubernetes/kubernetes/issues/39785#issuecomment-279959133 for more info.
-	dc.enqueueAfter(d, after+time.Second)
+	dc.enqueueMachineDeploymentAfter(d, after+time.Second)
 	return after
 }

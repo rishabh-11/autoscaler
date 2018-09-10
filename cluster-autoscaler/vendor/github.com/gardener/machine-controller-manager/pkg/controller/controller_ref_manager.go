@@ -16,7 +16,7 @@ limitations under the License.
 This file was copied and modified from the kubernetes/kubernetes project
 https://github.com/kubernetes/kubernetes/release-1.8/pkg/controller/controller_ref_manager.go
 
-Modifications Copyright 2017 The Gardener Authors.
+Modifications Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 // Package controller is used to provide the core functionalities of machine-controller-manager
@@ -26,14 +26,14 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
+	"github.com/gardener/machine-controller-manager/pkg/apis/cluster/v1alpha1"
 	"github.com/golang/glog"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io2/apimachinery/pkg/api/errors"
+	metav1 "k8s.io2/apimachinery/pkg/apis/meta/v1"
+	"k8s.io2/apimachinery/pkg/labels"
+	"k8s.io2/apimachinery/pkg/runtime/schema"
 
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	utilerrors "k8s.io2/apimachinery/pkg/util/errors"
 )
 
 // BaseControllerRefManager is the struct is used to identify the base controller of the object

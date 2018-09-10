@@ -27,17 +27,17 @@ import (
 	"strings"
 	"time"
 
-	machineapi "github.com/gardener/machine-controller-manager/pkg/client/clientset/versioned/typed/machine/v1alpha1"
+	machineapi "github.com/gardener/machine-controller-manager/pkg/client/clientset/versioned/typed/cluster/v1alpha1"
 	machineinformers "github.com/gardener/machine-controller-manager/pkg/client/informers/externalversions"
-	machinelisters "github.com/gardener/machine-controller-manager/pkg/client/listers/machine/v1alpha1"
+	machinelisters "github.com/gardener/machine-controller-manager/pkg/client/listers/cluster/v1alpha1"
 	corecontroller "github.com/gardener/machine-controller-manager/pkg/controller"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io2/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/golang/glog"
 	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
 	"github.com/gardener/autoscaler/cluster-autoscaler/config/dynamic"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
+	"github.com/golang/glog"
+	"k8s.io2/client-go/kubernetes"
+	"k8s.io2/client-go/tools/clientcmd"
 )
 
 const (
@@ -51,7 +51,7 @@ type McmManager struct {
 	namespace               string
 	interrupt               chan struct{}
 	discoveryOpts           cloudprovider.NodeGroupDiscoveryOptions
-	machineclient           machineapi.MachineV1alpha1Interface
+	machineclient           machineapi.ClusterV1alpha1Interface
 	coreclient              kubernetes.Interface
 	machineDeploymentLister machinelisters.MachineDeploymentLister
 	machinelisters          machinelisters.MachineLister
@@ -73,7 +73,7 @@ func createMCMManagerInternal(discoveryOpts cloudprovider.NodeGroupDiscoveryOpti
 		ClientConfig: controlKubeconfig,
 	}
 
-	machineClient := controlClientBuilder.ClientOrDie("machine-controller-manager-client").MachineV1alpha1()
+	machineClient := controlClientBuilder.ClientOrDie("machine-controller-manager-client").ClusterV1alpha1()
 	namespace := os.Getenv("CONTROL_NAMESPACE")
 	machineInformerFactory := machineinformers.NewFilteredSharedInformerFactory(
 		controlClientBuilder.ClientOrDie("machine-shared-informers"),
@@ -81,7 +81,7 @@ func createMCMManagerInternal(discoveryOpts cloudprovider.NodeGroupDiscoveryOpti
 		namespace,
 		nil,
 	)
-	machineSharedInformers := machineInformerFactory.Machine().V1alpha1()
+	machineSharedInformers := machineInformerFactory.Cluster().V1alpha1()
 
 	targetCoreKubeconfigPath := os.Getenv("TARGET_KUBECONFIG")
 	targetCoreKubeconfig, err := clientcmd.BuildConfigFromFlags("", targetCoreKubeconfigPath)
@@ -164,7 +164,7 @@ func (m *McmManager) GetMachineDeploymentSize(machinedeployment *MachineDeployme
 	if err != nil {
 		return 0, fmt.Errorf("Unable to fetch MachineDeployment object %s %+v", machinedeployment.Name, err)
 	}
-	return int64(md.Spec.Replicas), nil
+	return int64(*md.Spec.Replicas), nil
 }
 
 //SetMachineDeploymentSize sets the desired size for the Machinedeployment.
@@ -176,7 +176,7 @@ func (m *McmManager) SetMachineDeploymentSize(machinedeployment *MachineDeployme
 	}
 
 	clone := md.DeepCopy()
-	clone.Spec.Replicas = int32(size)
+	*clone.Spec.Replicas = int32(size)
 
 	_, err = m.machineclient.MachineDeployments(machinedeployment.Namespace).Update(clone)
 	if err != nil {
@@ -234,10 +234,10 @@ func (m *McmManager) DeleteMachines(machines []*Ref) error {
 
 	mdclone := md.DeepCopy()
 
-	if (int(mdclone.Spec.Replicas) - len(machines)) <= 0 {
+	if (int(*mdclone.Spec.Replicas) - len(machines)) <= 0 {
 		return fmt.Errorf("Unable to delete machine in MachineDeployment object %s , machine replicas are <= 0 ", commonMachineDeployment.Name)
 	}
-	mdclone.Spec.Replicas = mdclone.Spec.Replicas - int32(len(machines))
+	*mdclone.Spec.Replicas = *mdclone.Spec.Replicas - int32(len(machines))
 
 	_, err = m.machineclient.MachineDeployments(mdclone.Namespace).Update(mdclone)
 	if err != nil {

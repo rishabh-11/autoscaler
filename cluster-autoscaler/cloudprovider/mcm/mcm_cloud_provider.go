@@ -25,13 +25,13 @@ import (
 	"fmt"
 	"strings"
 
-	apiv1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
 	"github.com/gardener/autoscaler/cluster-autoscaler/config/dynamic"
 	"github.com/gardener/autoscaler/cluster-autoscaler/utils/errors"
+	apiv1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
+	metav1 "k8s.io2/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -161,7 +161,7 @@ func ReferenceFromProviderID(m *McmManager, id string) (*Ref, error) {
 
 	var Name, Namespace string
 	for _, machine := range machines.Items {
-		machineID := strings.Split(machine.Spec.ProviderID, "/")
+		machineID := strings.Split(machine.Status.ProviderID, "/")
 		nodeID := strings.Split(id, "/")
 		if machineID[len(machineID)-1] == nodeID[len(nodeID)-1] {
 			Name = machine.Name

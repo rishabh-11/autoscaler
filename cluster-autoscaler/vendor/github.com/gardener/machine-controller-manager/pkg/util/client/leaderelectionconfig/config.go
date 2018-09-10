@@ -24,16 +24,20 @@ import (
 
 	"github.com/gardener/machine-controller-manager/pkg/options"
 	"github.com/spf13/pflag"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	rl "k8s.io/client-go/tools/leaderelection/resourcelock"
+	metav1 "k8s.io2/apimachinery/pkg/apis/meta/v1"
+	rl "k8s.io2/client-go/tools/leaderelection/resourcelock"
 )
 
 const (
+	// DefaultLeaseDuration is the default lease duration for leader election
 	DefaultLeaseDuration = 15 * time.Second
+	// DefaultRenewDeadline is the default renew duration for leader election
 	DefaultRenewDeadline = 10 * time.Second
-	DefaultRetryPeriod   = 2 * time.Second
+	// DefaultRetryPeriod is the default retry period for leader election
+	DefaultRetryPeriod = 2 * time.Second
 )
 
+// DefaultLeaderElectionConfiguration the default configurations used for leader election
 func DefaultLeaderElectionConfiguration() options.LeaderElectionConfiguration {
 	return options.LeaderElectionConfiguration{
 		LeaderElect:   false,

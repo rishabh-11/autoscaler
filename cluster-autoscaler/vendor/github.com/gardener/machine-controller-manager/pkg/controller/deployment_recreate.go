@@ -16,15 +16,15 @@ limitations under the License.
 This file was copied and modified from the kubernetes/kubernetes project
 https://github.com/kubernetes/kubernetes/release-1.8/pkg/controller/deployment/recreate.go
 
-Modifications Copyright 2017 The Gardener Authors.
+Modifications Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 // Package controller is used to provide the core functionalities of machine-controller-manager
 package controller
 
 import (
-	"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
-	"k8s.io/apimachinery/pkg/types"
+	"github.com/gardener/machine-controller-manager/pkg/apis/cluster/v1alpha1"
+	"k8s.io2/apimachinery/pkg/types"
 )
 
 // rolloutRecreate implements the logic for recreating a machine set.
@@ -82,7 +82,7 @@ func (dc *controller) scaleDownOldMachineSetsForRecreate(oldISs []*v1alpha1.Mach
 	for i := range oldISs {
 		is := oldISs[i]
 		// Scaling not required.
-		if (is.Spec.Replicas) == 0 {
+		if *(is.Spec.Replicas) == 0 {
 			continue
 		}
 		scaledIS, updatedIS, err := dc.scaleMachineSetAndRecordEvent(is, 0, deployment)
@@ -116,6 +116,6 @@ func oldMachinesRunning(newIS *v1alpha1.MachineSet, oldISs []*v1alpha1.MachineSe
 
 // scaleUpNewMachineSetForRecreate scales up new machine set when deployment strategy is "Recreate".
 func (dc *controller) scaleUpNewMachineSetForRecreate(newIS *v1alpha1.MachineSet, deployment *v1alpha1.MachineDeployment) (bool, error) {
-	scaled, _, err := dc.scaleMachineSetAndRecordEvent(newIS, (deployment.Spec.Replicas), deployment)
+	scaled, _, err := dc.scaleMachineSetAndRecordEvent(newIS, *(deployment.Spec.Replicas), deployment)
 	return scaled, err
 }

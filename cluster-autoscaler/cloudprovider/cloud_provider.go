@@ -22,9 +22,9 @@ import (
 	"math"
 	"time"
 
+	"github.com/gardener/autoscaler/cluster-autoscaler/utils/errors"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"github.com/gardener/autoscaler/cluster-autoscaler/utils/errors"
 	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
 )
 

@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Gardener Authors.
+Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package controller
 
 import (
 	clientset "github.com/gardener/machine-controller-manager/pkg/client/clientset/versioned"
-	restclient "k8s.io/client-go/rest"
+	restclient "k8s.io2/client-go/rest"
 
 	"github.com/golang/glog"
 )

@@ -16,7 +16,7 @@ limitations under the License.
 This file was copied and modified from the kubernetes/kubernetes project
 https://github.com/kubernetes/kubernetes/blob/release-1.8/pkg/util/labels/labels_test.go
 
-Modifications Copyright 2018 The Gardener Authors.
+Modifications Copyright (c) 2018 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 package labels
@@ -25,7 +25,7 @@ import (
 	"reflect"
 	"testing"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io2/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestCloneAndAddLabel(t *testing.T) {

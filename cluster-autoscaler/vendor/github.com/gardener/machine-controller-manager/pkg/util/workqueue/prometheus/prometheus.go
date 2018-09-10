@@ -16,13 +16,13 @@ limitations under the License.
 This file was copied and modified from the kubernetes/kubernetes project
 https://github.com/kubernetes/kubernetes/blob/release-1.8/pkg/util/workqueue/prometheus/prometheus.go
 
-Modifications Copyright 2018 The Gardener Authors.
+Modifications Copyright (c) 2018 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 package prometheus
 
 import (
-	"k8s.io/client-go/util/workqueue"
+	"k8s.io2/client-go/util/workqueue"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -36,7 +36,7 @@ func init() {
 
 type prometheusMetricsProvider struct{}
 
-func (_ prometheusMetricsProvider) NewDepthMetric(name string) workqueue.GaugeMetric {
+func (prometheusMetricsProvider) NewDepthMetric(name string) workqueue.GaugeMetric {
 	depth := prometheus.NewGauge(prometheus.GaugeOpts{
 		Subsystem: name,
 		Name:      "depth",
@@ -46,7 +46,7 @@ func (_ prometheusMetricsProvider) NewDepthMetric(name string) workqueue.GaugeMe
 	return depth
 }
 
-func (_ prometheusMetricsProvider) NewAddsMetric(name string) workqueue.CounterMetric {
+func (prometheusMetricsProvider) NewAddsMetric(name string) workqueue.CounterMetric {
 	adds := prometheus.NewCounter(prometheus.CounterOpts{
 		Subsystem: name,
 		Name:      "adds",
@@ -56,7 +56,7 @@ func (_ prometheusMetricsProvider) NewAddsMetric(name string) workqueue.CounterM
 	return adds
 }
 
-func (_ prometheusMetricsProvider) NewLatencyMetric(name string) workqueue.SummaryMetric {
+func (prometheusMetricsProvider) NewLatencyMetric(name string) workqueue.SummaryMetric {
 	latency := prometheus.NewSummary(prometheus.SummaryOpts{
 		Subsystem: name,
 		Name:      "queue_latency",
@@ -66,7 +66,7 @@ func (_ prometheusMetricsProvider) NewLatencyMetric(name string) workqueue.Summa
 	return latency
 }
 
-func (_ prometheusMetricsProvider) NewWorkDurationMetric(name string) workqueue.SummaryMetric {
+func (prometheusMetricsProvider) NewWorkDurationMetric(name string) workqueue.SummaryMetric {
 	workDuration := prometheus.NewSummary(prometheus.SummaryOpts{
 		Subsystem: name,
 		Name:      "work_duration",
@@ -76,7 +76,7 @@ func (_ prometheusMetricsProvider) NewWorkDurationMetric(name string) workqueue.
 	return workDuration
 }
 
-func (_ prometheusMetricsProvider) NewRetriesMetric(name string) workqueue.CounterMetric {
+func (prometheusMetricsProvider) NewRetriesMetric(name string) workqueue.CounterMetric {
 	retries := prometheus.NewCounter(prometheus.CounterOpts{
 		Subsystem: name,
 		Name:      "retries",

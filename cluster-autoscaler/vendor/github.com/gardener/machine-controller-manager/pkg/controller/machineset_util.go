@@ -16,7 +16,7 @@ limitations under the License.
 This file was copied and modified from the kubernetes/kubernetes project
 https://github.com/kubernetes/kubernetes/blob/release-1.8/pkg/controller/deployment/util/replicaset_util.go
 
-Modifications Copyright 2017 The Gardener Authors.
+Modifications Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 // Package controller is used to provide the core functionalities of machine-controller-manager
@@ -28,12 +28,12 @@ import (
 	"github.com/golang/glog"
 
 	labelsutil "github.com/gardener/machine-controller-manager/pkg/util/labels"
-	errorsutil "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/client-go/util/retry"
+	errorsutil "k8s.io2/apimachinery/pkg/util/errors"
+	"k8s.io2/client-go/util/retry"
 
-	"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
-	v1alpha1client "github.com/gardener/machine-controller-manager/pkg/client/clientset/versioned/typed/machine/v1alpha1"
-	v1alpha1listers "github.com/gardener/machine-controller-manager/pkg/client/listers/machine/v1alpha1"
+	"github.com/gardener/machine-controller-manager/pkg/apis/cluster/v1alpha1"
+	v1alpha1client "github.com/gardener/machine-controller-manager/pkg/client/clientset/versioned/typed/cluster/v1alpha1"
+	v1alpha1listers "github.com/gardener/machine-controller-manager/pkg/client/listers/cluster/v1alpha1"
 )
 
 // TODO: use client library instead when it starts to support update retries

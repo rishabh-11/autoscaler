@@ -16,7 +16,7 @@ limitations under the License.
 This file was copied and modified from the kubernetes/kubernetes project
 https://github.com/kubernetes/kubernetes/blob/release-1.8/pkg/kubectl/cmd/drain.go
 
-Modifications Copyright 2017 The Gardener Authors.
+Modifications Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 // Package controller is used to provide the core functionalities of machine-controller-manager
@@ -31,14 +31,14 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	api "k8s.io/api/core/v1"
-	corev1 "k8s.io/api/core/v1"
-	policy "k8s.io/api/policy/v1beta1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
+	api "k8s.io2/api/core/v1"
+	corev1 "k8s.io2/api/core/v1"
+	policy "k8s.io2/api/policy/v1beta1"
+	apierrors "k8s.io2/apimachinery/pkg/api/errors"
+	metav1 "k8s.io2/apimachinery/pkg/apis/meta/v1"
+	"k8s.io2/apimachinery/pkg/fields"
+	"k8s.io2/apimachinery/pkg/util/wait"
+	"k8s.io2/client-go/kubernetes"
 )
 
 // DrainOptions are configurable options while draining a node before deletion
