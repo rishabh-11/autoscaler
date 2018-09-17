@@ -62,7 +62,7 @@ var (
 		func() runtime.Object { return &MachineSetList{} }, // Register versioned resource list
 		&MachineSetStrategy{builders.StorageStrategySingleton},
 	)
-	ApiVersion = builders.NewApiVersion("cluster.k8s.io2", "v1alpha1").WithResources(
+	ApiVersion = builders.NewApiVersion("cluster.k8s.io", "v1alpha1").WithResources(
 		clusterClusterStorage,
 		builders.NewApiResource( // Resource status endpoint
 			cluster.InternalClusterStatus,
