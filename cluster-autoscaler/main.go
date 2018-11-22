@@ -310,7 +310,7 @@ func main() {
 	kube_flag.InitFlags()
 	healthCheck := metrics.NewHealthCheck(*maxInactivityTimeFlag, *maxFailingTimeFlag)
 
-	glog.V(1).Infof("Cluster Autoscaler %s", ClusterAutoscalerVersion)
+	//glog.V(1).Infof("Cluster Autoscaler %s", ClusterAutoscalerVersion)
 
 	correctEstimator := false
 	for _, availableEstimator := range estimator.AvailableEstimators {

@@ -12,6 +12,10 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+This file was copied and modified from the kubernetes/autoscaler project https://github.com/kubernetes/autoscaler/blob/cluster-autoscaler-release-1.1/cluster-autoscaler/cloudprovider/builder/cloud_provider_builder.go
+
+Modifications Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 package builder
@@ -44,6 +48,7 @@ var AvailableCloudProviders = []string{
 	gce.ProviderNameGCE,
 	gke.ProviderNameGKE,
 	kubemark.ProviderName,
+	mcm.ProviderName,
 }
 
 // DefaultCloudProvider is GCE.
@@ -216,6 +221,21 @@ func buildKubemark(opts config.AutoscalingOptions, do cloudprovider.NodeGroupDis
 	provider, err := kubemark.BuildKubemarkCloudProvider(kubemarkController, do.NodeGroupSpecs, rl)
 	if err != nil {
 		glog.Fatalf("Failed to create Kubemark cloud provider: %v", err)
+	}
+	return provider
+}
+
+func (b CloudProviderBuilder) buildMCM(do cloudprovider.NodeGroupDiscoveryOptions, rl *cloudprovider.ResourceLimiter) cloudprovider.CloudProvider {
+	var mcmManager *mcm.McmManager
+	var err error
+	mcmManager, err = mcm.CreateMcmManager(do)
+
+	if err != nil {
+		glog.Fatalf("Failed to create MCM Manager: %v", err)
+	}
+	provider, err := mcm.BuildMcmCloudProvider(mcmManager, rl)
+	if err != nil {
+		glog.Fatalf("Failed to create MCM cloud provider: %v", err)
 	}
 	return provider
 }

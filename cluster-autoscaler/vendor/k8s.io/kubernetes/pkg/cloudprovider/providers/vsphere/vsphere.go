@@ -31,8 +31,6 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/gcfg.v1"
-
 	"github.com/golang/glog"
 	"github.com/vmware/govmomi/vapi/rest"
 	"github.com/vmware/govmomi/vapi/tags"

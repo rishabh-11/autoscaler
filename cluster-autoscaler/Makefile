@@ -11,16 +11,16 @@ deps:
 	go get github.com/tools/godep
 
 build: clean deps
-	$(ENVVAR) GOOS=$(GOOS) godep go build ./...
-	$(ENVVAR) GOOS=$(GOOS) godep go build -o cluster-autoscaler
+	go build ./...
+	go build -i -o cluster-autoscaler
 
 build-binary: clean deps
-	$(ENVVAR) GOOS=$(GOOS) godep go build -o cluster-autoscaler
+	go build -i -o cluster-autoscaler
 
-test-unit: clean deps build
-	$(ENVVAR) godep go test --test.short -race ./... $(FLAGS)
+test-unit:
+	go test --test.short -race ./... $(FLAGS)
 
-dev-release: build-binary execute-release
+dev-release: build-in-docker execute-release
 	echo "Release ${TAG} completed"
 
 make-image:
@@ -46,7 +46,7 @@ docker-builder:
 	docker build -t autoscaling-builder ../builder
 
 build-in-docker: clean docker-builder
-	docker run -v `pwd`:/gopath/src/k8s.io/autoscaler/cluster-autoscaler/ autoscaling-builder:latest bash -c 'cd /gopath/src/k8s.io/autoscaler/cluster-autoscaler && make build-binary'
+	docker run -v `pwd`:/gopath/src/github.com/gardener/autoscaler/cluster-autoscaler/ autoscaling-builder:latest bash -c 'cd /gopath/src/github.com/gardener/autoscaler/cluster-autoscaler && make build-binary'
 
 release: build-in-docker execute-release
 	echo "Full in-docker release ${TAG} completed"
@@ -55,7 +55,6 @@ container: build-in-docker make-image
 	echo "Created in-docker image ${TAG}"
 
 test-in-docker: clean docker-builder
-	docker run -v `pwd`:/gopath/src/k8s.io/autoscaler/cluster-autoscaler/ autoscaling-builder:latest bash -c 'cd /gopath/src/k8s.io/autoscaler/cluster-autoscaler && godep go test ./... '
+	docker run -v `pwd`:/gopath/src/github.com/gardener/autoscaler/cluster-autoscaler/ autoscaling-builder:latest bash -c 'cd /gopath/src/github.com/gardener/autoscaler/cluster-autoscaler && godep go test ./... '
 
 .PHONY: all deps build test-unit clean format execute-release dev-release docker-builder build-in-docker release generate
-

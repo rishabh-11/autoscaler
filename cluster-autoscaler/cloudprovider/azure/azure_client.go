@@ -405,6 +405,198 @@ func (az *azAccountsClient) ListKeys(ctx context.Context, resourceGroupName stri
 	return az.client.ListKeys(ctx, resourceGroupName, accountName)
 }
 
+// azVirtualMachineScaleSetsClient implements VirtualMachineScaleSetsClient.
+type azVirtualMachineScaleSetsClient struct {
+	client compute.VirtualMachineScaleSetsClient
+}
+
+func newAzVirtualMachineScaleSetsClient(subscriptionID, endpoint string, servicePrincipalToken *adal.ServicePrincipalToken) *azVirtualMachineScaleSetsClient {
+	virtualMachineScaleSetsClient := compute.NewVirtualMachineScaleSetsClient(subscriptionID)
+	virtualMachineScaleSetsClient.BaseURI = endpoint
+	virtualMachineScaleSetsClient.Authorizer = autorest.NewBearerAuthorizer(servicePrincipalToken)
+	virtualMachineScaleSetsClient.PollingDelay = 5 * time.Second
+	configureUserAgent(&virtualMachineScaleSetsClient.Client)
+
+	return &azVirtualMachineScaleSetsClient{
+		client: virtualMachineScaleSetsClient,
+	}
+}
+
+func (az *azVirtualMachineScaleSetsClient) CreateOrUpdate(ctx context.Context, resourceGroupName string, VMScaleSetName string, parameters compute.VirtualMachineScaleSet) (resp *http.Response, err error) {
+	glog.V(10).Infof("azVirtualMachineScaleSetsClient.CreateOrUpdate(%q,%q): start", resourceGroupName, VMScaleSetName)
+	defer func() {
+		glog.V(10).Infof("azVirtualMachineScaleSetsClient.CreateOrUpdate(%q,%q): end", resourceGroupName, VMScaleSetName)
+	}()
+
+	future, err := az.client.CreateOrUpdate(ctx, resourceGroupName, VMScaleSetName, parameters)
+	if err != nil {
+		return future.Response(), err
+	}
+
+	err = future.WaitForCompletion(ctx, az.client.Client)
+	return future.Response(), err
+}
+
+func (az *azVirtualMachineScaleSetsClient) Get(ctx context.Context, resourceGroupName string, VMScaleSetName string) (result compute.VirtualMachineScaleSet, err error) {
+	glog.V(10).Infof("azVirtualMachineScaleSetsClient.Get(%q,%q): start", resourceGroupName, VMScaleSetName)
+	defer func() {
+		glog.V(10).Infof("azVirtualMachineScaleSetsClient.Get(%q,%q): end", resourceGroupName, VMScaleSetName)
+	}()
+
+	return az.client.Get(ctx, resourceGroupName, VMScaleSetName)
+}
+
+func (az *azVirtualMachineScaleSetsClient) List(ctx context.Context, resourceGroupName string) (result []compute.VirtualMachineScaleSet, err error) {
+	glog.V(10).Infof("azVirtualMachineScaleSetsClient.List(%q,%q): start", resourceGroupName)
+	defer func() {
+		glog.V(10).Infof("azVirtualMachineScaleSetsClient.List(%q,%q): end", resourceGroupName)
+	}()
+
+	iterator, err := az.client.ListComplete(ctx, resourceGroupName)
+	if err != nil {
+		return nil, err
+	}
+
+	result = make([]compute.VirtualMachineScaleSet, 0)
+	for ; iterator.NotDone(); err = iterator.Next() {
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, iterator.Value())
+	}
+
+	return result, nil
+}
+
+func (az *azVirtualMachineScaleSetsClient) DeleteInstances(ctx context.Context, resourceGroupName string, vmScaleSetName string, vmInstanceIDs compute.VirtualMachineScaleSetVMInstanceRequiredIDs) (resp *http.Response, err error) {
+	glog.V(10).Infof("azVirtualMachineScaleSetsClient.DeleteInstances(%q,%q,%q): start", resourceGroupName, vmScaleSetName, vmInstanceIDs)
+	defer func() {
+		glog.V(10).Infof("azVirtualMachineScaleSetsClient.DeleteInstances(%q,%q,%q): end", resourceGroupName, vmScaleSetName, vmInstanceIDs)
+	}()
+
+	future, err := az.client.DeleteInstances(ctx, resourceGroupName, vmScaleSetName, vmInstanceIDs)
+	if err != nil {
+		return future.Response(), err
+	}
+
+	err = future.WaitForCompletion(ctx, az.client.Client)
+	return future.Response(), err
+}
+
+// azVirtualMachineScaleSetVMsClient implements VirtualMachineScaleSetVMsClient.
+type azVirtualMachineScaleSetVMsClient struct {
+	client compute.VirtualMachineScaleSetVMsClient
+}
+
+func newAzVirtualMachineScaleSetVMsClient(subscriptionID, endpoint string, servicePrincipalToken *adal.ServicePrincipalToken) *azVirtualMachineScaleSetVMsClient {
+	virtualMachineScaleSetVMsClient := compute.NewVirtualMachineScaleSetVMsClient(subscriptionID)
+	virtualMachineScaleSetVMsClient.BaseURI = endpoint
+	virtualMachineScaleSetVMsClient.Authorizer = autorest.NewBearerAuthorizer(servicePrincipalToken)
+	virtualMachineScaleSetVMsClient.PollingDelay = 5 * time.Second
+	configureUserAgent(&virtualMachineScaleSetVMsClient.Client)
+
+	return &azVirtualMachineScaleSetVMsClient{
+		client: virtualMachineScaleSetVMsClient,
+	}
+}
+
+func (az *azVirtualMachineScaleSetVMsClient) Get(ctx context.Context, resourceGroupName string, VMScaleSetName string, instanceID string) (result compute.VirtualMachineScaleSetVM, err error) {
+	glog.V(10).Infof("azVirtualMachineScaleSetVMsClient.Get(%q,%q,%q): start", resourceGroupName, VMScaleSetName, instanceID)
+	defer func() {
+		glog.V(10).Infof("azVirtualMachineScaleSetVMsClient.Get(%q,%q,%q): end", resourceGroupName, VMScaleSetName, instanceID)
+	}()
+
+	return az.client.Get(ctx, resourceGroupName, VMScaleSetName, instanceID)
+}
+
+func (az *azVirtualMachineScaleSetVMsClient) List(ctx context.Context, resourceGroupName string, virtualMachineScaleSetName string, filter string, selectParameter string, expand string) (result []compute.VirtualMachineScaleSetVM, err error) {
+	glog.V(10).Infof("azVirtualMachineScaleSetVMsClient.List(%q,%q,%q): start", resourceGroupName, virtualMachineScaleSetName, filter)
+	defer func() {
+		glog.V(10).Infof("azVirtualMachineScaleSetVMsClient.List(%q,%q,%q): end", resourceGroupName, virtualMachineScaleSetName, filter)
+	}()
+
+	iterator, err := az.client.ListComplete(ctx, resourceGroupName, virtualMachineScaleSetName, filter, selectParameter, expand)
+	if err != nil {
+		return nil, err
+	}
+
+	result = make([]compute.VirtualMachineScaleSetVM, 0)
+	for ; iterator.NotDone(); err = iterator.Next() {
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, iterator.Value())
+	}
+
+	return result, nil
+}
+
+// azVirtualMachinesClient implements VirtualMachinesClient.
+type azVirtualMachinesClient struct {
+	client compute.VirtualMachinesClient
+}
+
+func newAzVirtualMachinesClient(subscriptionID, endpoint string, servicePrincipalToken *adal.ServicePrincipalToken) *azVirtualMachinesClient {
+	virtualMachinesClient := compute.NewVirtualMachinesClient(subscriptionID)
+	virtualMachinesClient.BaseURI = endpoint
+	virtualMachinesClient.Authorizer = autorest.NewBearerAuthorizer(servicePrincipalToken)
+	virtualMachinesClient.PollingDelay = 5 * time.Second
+	configureUserAgent(&virtualMachinesClient.Client)
+
+	return &azVirtualMachinesClient{
+		client: virtualMachinesClient,
+	}
+}
+
+func (az *azVirtualMachinesClient) Get(ctx context.Context, resourceGroupName string, VMName string, expand compute.InstanceViewTypes) (result compute.VirtualMachine, err error) {
+	glog.V(10).Infof("azVirtualMachinesClient.Get(%q,%q,%q): start", resourceGroupName, VMName, expand)
+	defer func() {
+		glog.V(10).Infof("azVirtualMachinesClient.Get(%q,%q,%q): end", resourceGroupName, VMName, expand)
+	}()
+
+	return az.client.Get(ctx, resourceGroupName, VMName, expand)
+}
+
+func (az *azVirtualMachinesClient) Delete(ctx context.Context, resourceGroupName string, VMName string) (resp *http.Response, err error) {
+	glog.V(10).Infof("azVirtualMachinesClient.Delete(%q,%q): start", resourceGroupName, VMName)
+	defer func() {
+		glog.V(10).Infof("azVirtualMachinesClient.Delete(%q,%q): end", resourceGroupName, VMName)
+	}()
+
+	future, err := az.client.Delete(ctx, resourceGroupName, VMName)
+	if err != nil {
+		return future.Response(), err
+	}
+
+	err = future.WaitForCompletion(ctx, az.client.Client)
+	return future.Response(), err
+}
+
+func (az *azVirtualMachinesClient) List(ctx context.Context, resourceGroupName string) (result []compute.VirtualMachine, err error) {
+	glog.V(10).Infof("azVirtualMachinesClient.List(%q): start", resourceGroupName)
+	defer func() {
+		glog.V(10).Infof("azVirtualMachinesClient.List(%q): end", resourceGroupName)
+	}()
+
+	iterator, err := az.client.ListComplete(ctx, resourceGroupName)
+	if err != nil {
+		return nil, err
+	}
+
+	result = make([]compute.VirtualMachine, 0)
+	for ; iterator.NotDone(); err = iterator.Next() {
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, iterator.Value())
+	}
+
+	return result, nil
+}
+
 type azClient struct {
 	virtualMachineScaleSetsClient   VirtualMachineScaleSetsClient
 	virtualMachineScaleSetVMsClient VirtualMachineScaleSetVMsClient

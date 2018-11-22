@@ -50,6 +50,14 @@ type NodeGroupDiscoveryOptions struct {
 	NodeGroupAutoDiscoverySpecs []string
 }
 
+// Validate returns and error when both --nodes and --node-group-auto-discovery are specified
+func (o NodeGroupDiscoveryOptions) Validate() error {
+	if o.StaticDiscoverySpecified() && o.AutoDiscoverySpecified() {
+		return fmt.Errorf("Either node group specs(%v) or node group auto discovery spec(%v) can be specified but not both", o.NodeGroupSpecs, o.NodeGroupAutoDiscoverySpecs)
+	}
+	return nil
+}
+
 // StaticDiscoverySpecified returns true only when there are 1 or more --nodes flags specified
 func (o NodeGroupDiscoveryOptions) StaticDiscoverySpecified() bool {
 	return len(o.NodeGroupSpecs) > 0

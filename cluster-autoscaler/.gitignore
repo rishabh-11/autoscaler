@@ -8,3 +8,6 @@ cluster_autoscaler
 *.un~
 Session.vim
 .netrwhist
+
+main
+dev/*

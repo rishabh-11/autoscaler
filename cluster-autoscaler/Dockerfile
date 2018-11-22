@@ -19,7 +19,7 @@ LABEL maintainer="Marcin Wielgus <mwielgus@google.com>"
 ENV DEBIAN_FRONTEND noninteractive
 RUN clean-install ca-certificates
 
-ADD cluster-autoscaler cluster-autoscaler
+ADD rel/cluster-autoscaler cluster-autoscaler
 ADD run.sh run.sh
 
 CMD ./run.sh
