@@ -22,9 +22,9 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
+	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
 
-	. "k8s.io/autoscaler/cluster-autoscaler/utils/test"
+	. "github.com/gardener/autoscaler/cluster-autoscaler/utils/test"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

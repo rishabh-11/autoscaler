@@ -21,7 +21,7 @@ import (
 
 	"github.com/golang/glog"
 	apiv1 "k8s.io/api/core/v1"
-	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/poc.autoscaling.k8s.io/v1alpha1"
+	vpa_types "github.com/gardener/autoscaler/vertical-pod-autoscaler/pkg/apis/poc.autoscaling.k8s.io/v1alpha1"
 )
 
 // NewCappingRecommendationProcessor constructs new RecommendationsProcessor that adjusts recommendation

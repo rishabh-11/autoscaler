@@ -19,7 +19,7 @@ package main
 import (
 	"testing"
 
-	"k8s.io/autoscaler/cluster-autoscaler/config"
+	"github.com/gardener/autoscaler/cluster-autoscaler/config"
 
 	"github.com/stretchr/testify/assert"
 )

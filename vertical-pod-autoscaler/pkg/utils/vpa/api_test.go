@@ -24,10 +24,10 @@ import (
 	core "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
-	vpa_types "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/poc.autoscaling.k8s.io/v1alpha1"
-	vpa_fake "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/fake"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/utils/test"
+	vpa_types "github.com/gardener/autoscaler/vertical-pod-autoscaler/pkg/apis/poc.autoscaling.k8s.io/v1alpha1"
+	vpa_fake "github.com/gardener/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/fake"
+	"github.com/gardener/autoscaler/vertical-pod-autoscaler/pkg/recommender/model"
+	"github.com/gardener/autoscaler/vertical-pod-autoscaler/pkg/utils/test"
 
 	"github.com/stretchr/testify/assert"
 )

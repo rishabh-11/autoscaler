@@ -21,9 +21,9 @@ import (
 	"testing"
 
 	apiv1 "k8s.io/api/core/v1"
-	"k8s.io/autoscaler/cluster-autoscaler/context"
-	"k8s.io/autoscaler/cluster-autoscaler/utils/nodegroupset"
-	. "k8s.io/autoscaler/cluster-autoscaler/utils/test"
+	"github.com/gardener/autoscaler/cluster-autoscaler/context"
+	"github.com/gardener/autoscaler/cluster-autoscaler/utils/nodegroupset"
+	. "github.com/gardener/autoscaler/cluster-autoscaler/utils/test"
 	kube_record "k8s.io/client-go/tools/record"
 
 	"github.com/stretchr/testify/assert"

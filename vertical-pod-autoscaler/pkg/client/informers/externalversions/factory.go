@@ -26,9 +26,9 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
-	versioned "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
-	internalinterfaces "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/informers/externalversions/internalinterfaces"
-	poc_autoscaling_k8s_io "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/informers/externalversions/poc.autoscaling.k8s.io"
+	versioned "github.com/gardener/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
+	internalinterfaces "github.com/gardener/autoscaler/vertical-pod-autoscaler/pkg/client/informers/externalversions/internalinterfaces"
+	poc_autoscaling_k8s_io "github.com/gardener/autoscaler/vertical-pod-autoscaler/pkg/client/informers/externalversions/poc.autoscaling.k8s.io"
 	cache "k8s.io/client-go/tools/cache"
 )
 

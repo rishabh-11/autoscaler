@@ -24,10 +24,10 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
-	poc_autoscaling_k8s_io_v1alpha1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/poc.autoscaling.k8s.io/v1alpha1"
-	versioned "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
-	internalinterfaces "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/listers/poc.autoscaling.k8s.io/v1alpha1"
+	poc_autoscaling_k8s_io_v1alpha1 "github.com/gardener/autoscaler/vertical-pod-autoscaler/pkg/apis/poc.autoscaling.k8s.io/v1alpha1"
+	versioned "github.com/gardener/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned"
+	internalinterfaces "github.com/gardener/autoscaler/vertical-pod-autoscaler/pkg/client/informers/externalversions/internalinterfaces"
+	v1alpha1 "github.com/gardener/autoscaler/vertical-pod-autoscaler/pkg/client/listers/poc.autoscaling.k8s.io/v1alpha1"
 	cache "k8s.io/client-go/tools/cache"
 )
 

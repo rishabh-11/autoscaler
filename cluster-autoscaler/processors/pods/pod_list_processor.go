@@ -18,7 +18,7 @@ package pods
 
 import (
 	apiv1 "k8s.io/api/core/v1"
-	"k8s.io/autoscaler/cluster-autoscaler/context"
+	"github.com/gardener/autoscaler/cluster-autoscaler/context"
 )
 
 // PodListProcessor processes lists of unschedulable and sheduled pods before scaling of the cluster.

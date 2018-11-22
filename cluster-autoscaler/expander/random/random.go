@@ -19,7 +19,7 @@ package random
 import (
 	"math/rand"
 
-	"k8s.io/autoscaler/cluster-autoscaler/expander"
+	"github.com/gardener/autoscaler/cluster-autoscaler/expander"
 	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 )
 

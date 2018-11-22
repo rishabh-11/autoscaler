@@ -17,9 +17,9 @@ limitations under the License.
 package processors
 
 import (
-	"k8s.io/autoscaler/cluster-autoscaler/processors/nodegroups"
-	"k8s.io/autoscaler/cluster-autoscaler/processors/pods"
-	"k8s.io/autoscaler/cluster-autoscaler/processors/status"
+	"github.com/gardener/autoscaler/cluster-autoscaler/processors/nodegroups"
+	"github.com/gardener/autoscaler/cluster-autoscaler/processors/pods"
+	"github.com/gardener/autoscaler/cluster-autoscaler/processors/status"
 )
 
 // AutoscalingProcessors are a set of customizable processors used for encapsulating

@@ -18,8 +18,8 @@ package v1alpha1
 
 import (
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
-	v1alpha1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/poc.autoscaling.k8s.io/v1alpha1"
-	"k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/scheme"
+	v1alpha1 "github.com/gardener/autoscaler/vertical-pod-autoscaler/pkg/apis/poc.autoscaling.k8s.io/v1alpha1"
+	"github.com/gardener/autoscaler/vertical-pod-autoscaler/pkg/client/clientset/versioned/scheme"
 	rest "k8s.io/client-go/rest"
 )
 

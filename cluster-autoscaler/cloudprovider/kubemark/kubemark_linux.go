@@ -26,9 +26,9 @@ import (
 
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
-	"k8s.io/autoscaler/cluster-autoscaler/config/dynamic"
-	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
+	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
+	"github.com/gardener/autoscaler/cluster-autoscaler/config/dynamic"
+	"github.com/gardener/autoscaler/cluster-autoscaler/utils/errors"
 	"k8s.io/kubernetes/pkg/kubemark"
 	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 

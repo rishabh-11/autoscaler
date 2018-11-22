@@ -23,14 +23,14 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
-	testprovider "k8s.io/autoscaler/cluster-autoscaler/cloudprovider/test"
-	"k8s.io/autoscaler/cluster-autoscaler/clusterstate"
-	"k8s.io/autoscaler/cluster-autoscaler/config"
-	"k8s.io/autoscaler/cluster-autoscaler/estimator"
-	ca_processors "k8s.io/autoscaler/cluster-autoscaler/processors"
-	. "k8s.io/autoscaler/cluster-autoscaler/utils/test"
-	"k8s.io/autoscaler/cluster-autoscaler/utils/units"
+	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
+	testprovider "github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider/test"
+	"github.com/gardener/autoscaler/cluster-autoscaler/clusterstate"
+	"github.com/gardener/autoscaler/cluster-autoscaler/config"
+	"github.com/gardener/autoscaler/cluster-autoscaler/estimator"
+	ca_processors "github.com/gardener/autoscaler/cluster-autoscaler/processors"
+	. "github.com/gardener/autoscaler/cluster-autoscaler/utils/test"
+	"github.com/gardener/autoscaler/cluster-autoscaler/utils/units"
 	kube_record "k8s.io/client-go/tools/record"
 
 	apiv1 "k8s.io/api/core/v1"
@@ -41,7 +41,7 @@ import (
 	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 
 	"github.com/stretchr/testify/assert"
-	"k8s.io/autoscaler/cluster-autoscaler/expander"
+	"github.com/gardener/autoscaler/cluster-autoscaler/expander"
 )
 
 var defaultOptions = config.AutoscalingOptions{

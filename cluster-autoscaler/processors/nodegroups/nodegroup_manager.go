@@ -17,9 +17,9 @@ limitations under the License.
 package nodegroups
 
 import (
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
-	"k8s.io/autoscaler/cluster-autoscaler/context"
-	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
+	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
+	"github.com/gardener/autoscaler/cluster-autoscaler/context"
+	"github.com/gardener/autoscaler/cluster-autoscaler/utils/errors"
 )
 
 // NodeGroupManager is responsible for creating/deleting node groups.

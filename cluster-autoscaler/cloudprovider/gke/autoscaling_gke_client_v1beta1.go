@@ -21,9 +21,9 @@ import (
 	"net/http"
 	"time"
 
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
-	"k8s.io/autoscaler/cluster-autoscaler/utils/gpu"
-	"k8s.io/autoscaler/cluster-autoscaler/utils/units"
+	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
+	"github.com/gardener/autoscaler/cluster-autoscaler/utils/gpu"
+	"github.com/gardener/autoscaler/cluster-autoscaler/utils/units"
 
 	apiv1 "k8s.io/api/core/v1"
 

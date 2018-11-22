@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
+	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
 
 	gke_api "google.golang.org/api/container/v1"
 )

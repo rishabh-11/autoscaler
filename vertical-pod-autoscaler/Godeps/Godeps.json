@@ -1,5 +1,5 @@
 {
-	"ImportPath": "k8s.io/autoscaler/vertical-pod-autoscaler",
+	"ImportPath": "github.com/gardener/autoscaler/vertical-pod-autoscaler",
 	"GoVersion": "go1.10",
 	"GodepVersion": "v80",
 	"Packages": [

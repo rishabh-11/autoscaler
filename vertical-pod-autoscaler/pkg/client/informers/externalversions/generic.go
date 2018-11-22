@@ -22,7 +22,7 @@ import (
 	"fmt"
 
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
-	v1alpha1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/poc.autoscaling.k8s.io/v1alpha1"
+	v1alpha1 "github.com/gardener/autoscaler/vertical-pod-autoscaler/pkg/apis/poc.autoscaling.k8s.io/v1alpha1"
 	cache "k8s.io/client-go/tools/cache"
 )
 

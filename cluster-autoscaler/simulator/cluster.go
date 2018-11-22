@@ -23,10 +23,10 @@ import (
 	"math/rand"
 	"time"
 
-	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
-	"k8s.io/autoscaler/cluster-autoscaler/utils/glogx"
-	scheduler_util "k8s.io/autoscaler/cluster-autoscaler/utils/scheduler"
-	"k8s.io/autoscaler/cluster-autoscaler/utils/tpu"
+	"github.com/gardener/autoscaler/cluster-autoscaler/utils/errors"
+	"github.com/gardener/autoscaler/cluster-autoscaler/utils/glogx"
+	scheduler_util "github.com/gardener/autoscaler/cluster-autoscaler/utils/scheduler"
+	"github.com/gardener/autoscaler/cluster-autoscaler/utils/tpu"
 
 	apiv1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1beta1"

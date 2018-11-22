@@ -24,15 +24,15 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
-	"k8s.io/autoscaler/cluster-autoscaler/clusterstate"
-	"k8s.io/autoscaler/cluster-autoscaler/context"
-	"k8s.io/autoscaler/cluster-autoscaler/metrics"
-	"k8s.io/autoscaler/cluster-autoscaler/simulator"
-	"k8s.io/autoscaler/cluster-autoscaler/utils/deletetaint"
-	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
-	kube_util "k8s.io/autoscaler/cluster-autoscaler/utils/kubernetes"
-	scheduler_util "k8s.io/autoscaler/cluster-autoscaler/utils/scheduler"
+	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
+	"github.com/gardener/autoscaler/cluster-autoscaler/clusterstate"
+	"github.com/gardener/autoscaler/cluster-autoscaler/context"
+	"github.com/gardener/autoscaler/cluster-autoscaler/metrics"
+	"github.com/gardener/autoscaler/cluster-autoscaler/simulator"
+	"github.com/gardener/autoscaler/cluster-autoscaler/utils/deletetaint"
+	"github.com/gardener/autoscaler/cluster-autoscaler/utils/errors"
+	kube_util "github.com/gardener/autoscaler/cluster-autoscaler/utils/kubernetes"
+	scheduler_util "github.com/gardener/autoscaler/cluster-autoscaler/utils/scheduler"
 
 	apiv1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1beta1"
@@ -43,7 +43,7 @@ import (
 
 	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/autoscaler/cluster-autoscaler/utils/gpu"
+	"github.com/gardener/autoscaler/cluster-autoscaler/utils/gpu"
 )
 
 // ScaleDownResult represents the state of scale down.

@@ -20,7 +20,7 @@ import (
 	"flag"
 	"time"
 
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
+	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
 )
 
 // This flag is outside main as it's only useful for test/development.

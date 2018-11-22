@@ -19,8 +19,8 @@ limitations under the License.
 package poc
 
 import (
-	internalinterfaces "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/client/informers/externalversions/poc.autoscaling.k8s.io/v1alpha1"
+	internalinterfaces "github.com/gardener/autoscaler/vertical-pod-autoscaler/pkg/client/informers/externalversions/internalinterfaces"
+	v1alpha1 "github.com/gardener/autoscaler/vertical-pod-autoscaler/pkg/client/informers/externalversions/poc.autoscaling.k8s.io/v1alpha1"
 )
 
 // Interface provides access to each of this group's versions.

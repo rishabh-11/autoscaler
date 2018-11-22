@@ -17,8 +17,8 @@ limitations under the License.
 package status
 
 import (
-	"k8s.io/autoscaler/cluster-autoscaler/clusterstate"
-	"k8s.io/autoscaler/cluster-autoscaler/context"
+	"github.com/gardener/autoscaler/cluster-autoscaler/clusterstate"
+	"github.com/gardener/autoscaler/cluster-autoscaler/context"
 	"time"
 )
 

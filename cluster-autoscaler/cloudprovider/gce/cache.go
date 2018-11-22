@@ -22,7 +22,7 @@ import (
 	"strings"
 	"sync"
 
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
+	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
 
 	"github.com/golang/glog"
 	gce "google.golang.org/api/compute/v1"

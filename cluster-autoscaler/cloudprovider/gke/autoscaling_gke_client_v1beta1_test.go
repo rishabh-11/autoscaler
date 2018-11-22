@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	test_util "k8s.io/autoscaler/cluster-autoscaler/utils/test"
+	test_util "github.com/gardener/autoscaler/cluster-autoscaler/utils/test"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"

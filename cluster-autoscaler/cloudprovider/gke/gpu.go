@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"strings"
 
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
+	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
 )
 
 var (

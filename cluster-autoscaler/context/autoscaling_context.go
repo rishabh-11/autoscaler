@@ -18,12 +18,12 @@ package context
 
 import (
 	"github.com/golang/glog"
-	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
-	"k8s.io/autoscaler/cluster-autoscaler/clusterstate/utils"
-	"k8s.io/autoscaler/cluster-autoscaler/config"
-	"k8s.io/autoscaler/cluster-autoscaler/expander"
-	"k8s.io/autoscaler/cluster-autoscaler/simulator"
-	kube_util "k8s.io/autoscaler/cluster-autoscaler/utils/kubernetes"
+	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
+	"github.com/gardener/autoscaler/cluster-autoscaler/clusterstate/utils"
+	"github.com/gardener/autoscaler/cluster-autoscaler/config"
+	"github.com/gardener/autoscaler/cluster-autoscaler/expander"
+	"github.com/gardener/autoscaler/cluster-autoscaler/simulator"
+	kube_util "github.com/gardener/autoscaler/cluster-autoscaler/utils/kubernetes"
 	kube_client "k8s.io/client-go/kubernetes"
 	kube_record "k8s.io/client-go/tools/record"
 )
