@@ -16,7 +16,7 @@ limitations under the License.
 This file was copied and modified from the kubernetes/kubernetes project
 https://github.com/kubernetes/kubernetes/release-1.8/pkg/controller/deployment/progress.go
 
-Modifications Copyright 2017 The Gardener Authors.
+Modifications Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 // Package controller is used to provide the core functionalities of machine-controller-manager
@@ -24,7 +24,6 @@ package controller
 
 import (
 	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/golang/glog"
@@ -108,7 +107,7 @@ func (dc *controller) syncRolloutStatus(allISs []*v1alpha1.MachineSet, newIS *v1
 	}
 
 	// Do not update if there is nothing new to add.
-	if reflect.DeepEqual(d.Status, newStatus) {
+	if !statusUpdateRequired(d.Status, newStatus) {
 		// Requeue the deployment if required.
 		dc.requeueStuckMachineDeployment(d, newStatus)
 		return nil
@@ -197,6 +196,6 @@ func (dc *controller) requeueStuckMachineDeployment(d *v1alpha1.MachineDeploymen
 	glog.V(4).Infof("Queueing up machine deployment %q for a progress check after %ds", d.Name, int(after.Seconds()))
 	// Add a second to avoid milliseconds skew in AddAfter.
 	// See https://github.com/kubernetes/kubernetes/issues/39785#issuecomment-279959133 for more info.
-	dc.enqueueAfter(d, after+time.Second)
+	dc.enqueueMachineDeploymentAfter(d, after+time.Second)
 	return after
 }

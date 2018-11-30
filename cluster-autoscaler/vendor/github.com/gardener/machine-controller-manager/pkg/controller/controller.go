@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Gardener Authors.
+Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -30,12 +30,14 @@ import (
 	machineinformers "github.com/gardener/machine-controller-manager/pkg/client/informers/externalversions/machine/v1alpha1"
 	machinelisters "github.com/gardener/machine-controller-manager/pkg/client/listers/machine/v1alpha1"
 	"github.com/golang/glog"
+	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/api/core/v1"
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	corelisters "k8s.io/client-go/listers/core/v1"
 
 	machinescheme "github.com/gardener/machine-controller-manager/pkg/client/clientset/versioned/scheme"
+	"github.com/gardener/machine-controller-manager/pkg/handlers"
 	"github.com/gardener/machine-controller-manager/pkg/options"
 	runtimeutil "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -70,6 +72,7 @@ func NewController(
 	awsMachineClassInformer machineinformers.AWSMachineClassInformer,
 	azureMachineClassInformer machineinformers.AzureMachineClassInformer,
 	gcpMachineClassInformer machineinformers.GCPMachineClassInformer,
+	alicloudMachineClassInformer machineinformers.AlicloudMachineClassInformer,
 	machineInformer machineinformers.MachineInformer,
 	machineSetInformer machineinformers.MachineSetInformer,
 	machineDeploymentInformer machineinformers.MachineDeploymentInformer,
@@ -77,24 +80,26 @@ func NewController(
 	safetyOptions options.SafetyOptions,
 ) (Controller, error) {
 	controller := &controller{
-		namespace:                  namespace,
-		controlMachineClient:       controlMachineClient,
-		controlCoreClient:          controlCoreClient,
-		targetCoreClient:           targetCoreClient,
-		recorder:                   recorder,
-		expectations:               NewUIDTrackingContExpectations(NewContExpectations()),
-		secretQueue:                workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "secret"),
-		nodeQueue:                  workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "node"),
-		nodeToMachineQueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "nodeToMachine"),
-		openStackMachineClassQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "openstackmachineclass"),
-		awsMachineClassQueue:       workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "awsmachineclass"),
-		azureMachineClassQueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "azuremachineclass"),
-		gcpMachineClassQueue:       workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "gcpmachineclass"),
-		machineQueue:               workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machine"),
-		machineSetQueue:            workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineset"),
-		machineDeploymentQueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machinedeployment"),
-		machineSafetyQueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machinesafety"),
-		safetyOptions:              safetyOptions,
+		namespace:                      namespace,
+		controlMachineClient:           controlMachineClient,
+		controlCoreClient:              controlCoreClient,
+		targetCoreClient:               targetCoreClient,
+		recorder:                       recorder,
+		expectations:                   NewUIDTrackingContExpectations(NewContExpectations()),
+		secretQueue:                    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "secret"),
+		nodeQueue:                      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "node"),
+		openStackMachineClassQueue:     workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "openstackmachineclass"),
+		awsMachineClassQueue:           workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "awsmachineclass"),
+		azureMachineClassQueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "azuremachineclass"),
+		gcpMachineClassQueue:           workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "gcpmachineclass"),
+		alicloudMachineClassQueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "alicloudmachineclass"),
+		machineQueue:                   workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machine"),
+		machineSetQueue:                workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machineset"),
+		machineDeploymentQueue:         workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machinedeployment"),
+		machineSafetyOrphanVMsQueue:    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machinesafetyorphanvms"),
+		machineSafetyOvershootingQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machinesafetyovershooting"),
+		machineSafetyAPIServerQueue:    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "machinesafetyapiserver"),
+		safetyOptions:                  safetyOptions,
 	}
 
 	controller.internalExternalScheme = runtime.NewScheme()
@@ -127,6 +132,7 @@ func NewController(
 	controller.awsMachineClassLister = awsMachineClassInformer.Lister()
 	controller.azureMachineClassLister = azureMachineClassInformer.Lister()
 	controller.gcpMachineClassLister = gcpMachineClassInformer.Lister()
+	controller.alicloudMachineClassLister = alicloudMachineClassInformer.Lister()
 	controller.nodeLister = nodeInformer.Lister()
 	controller.machineLister = machineInformer.Lister()
 	controller.machineSetLister = machineSetInformer.Lister()
@@ -138,16 +144,41 @@ func NewController(
 	controller.awsMachineClassSynced = awsMachineClassInformer.Informer().HasSynced
 	controller.azureMachineClassSynced = azureMachineClassInformer.Informer().HasSynced
 	controller.gcpMachineClassSynced = gcpMachineClassInformer.Informer().HasSynced
+	controller.alicloudMachineClassSynced = alicloudMachineClassInformer.Informer().HasSynced
 	controller.nodeSynced = nodeInformer.Informer().HasSynced
 	controller.machineSynced = machineInformer.Informer().HasSynced
 	controller.machineSetSynced = machineSetInformer.Informer().HasSynced
 	controller.machineDeploymentSynced = machineDeploymentInformer.Informer().HasSynced
 
-	/*
-		secretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc:    controller.secretAdd,
-			UpdateFunc: controller.secretUpdate,
-		})*/
+	// Secret Controller Informers
+	secretInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    controller.secretAdd,
+		DeleteFunc: controller.secretDelete,
+	})
+
+	openStackMachineClassInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    controller.openStackMachineClassToSecretAdd,
+		UpdateFunc: controller.openStackMachineClassToSecretUpdate,
+		DeleteFunc: controller.openStackMachineClassToSecretDelete,
+	})
+
+	gcpMachineClassInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    controller.gcpMachineClassToSecretAdd,
+		UpdateFunc: controller.gcpMachineClassToSecretUpdate,
+		DeleteFunc: controller.gcpMachineClassToSecretDelete,
+	})
+
+	azureMachineClassInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    controller.azureMachineClassToSecretAdd,
+		UpdateFunc: controller.azureMachineClassToSecretUpdate,
+		DeleteFunc: controller.azureMachineClassToSecretDelete,
+	})
+
+	awsMachineClassInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    controller.awsMachineClassToSecretAdd,
+		UpdateFunc: controller.awsMachineClassToSecretUpdate,
+		DeleteFunc: controller.awsMachineClassToSecretDelete,
+	})
 
 	// Openstack Controller Informers
 	machineDeploymentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -221,6 +252,24 @@ func NewController(
 		UpdateFunc: controller.gcpMachineClassUpdate,
 	})
 
+	// Alicloud Controller Informers
+	machineDeploymentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		DeleteFunc: controller.machineDeploymentToAlicloudMachineClassDelete,
+	})
+
+	machineSetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		DeleteFunc: controller.machineSetToAlicloudMachineClassDelete,
+	})
+
+	machineInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		DeleteFunc: controller.machineToAlicloudMachineClassDelete,
+	})
+
+	alicloudMachineClassInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    controller.alicloudMachineClassAdd,
+		UpdateFunc: controller.alicloudMachineClassUpdate,
+	})
+
 	/* Node Controller Informers - Don't remove this, saved for future use case.
 	nodeInformer.Informer().AddEventHandler(
 		cache.FilteringResourceEventHandler{
@@ -280,19 +329,25 @@ func NewController(
 	})
 
 	// MachineSafety Controller Informers
+
+	// We follow the kubernetes way of reconciling the safety controller
+	// done by adding empty key objects. We initialize it, to trigger
+	// running of different safety loop on MCM startup.
+	controller.machineSafetyOrphanVMsQueue.Add("")
+	controller.machineSafetyOvershootingQueue.Add("")
+	controller.machineSafetyAPIServerQueue.Add("")
+
 	machineInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		// addMachineToSafety makes sure machine objects does not overshoot
 		AddFunc: controller.addMachineToSafety,
+		// deleteMachineToSafety makes sure that orphan VM handler is invoked
+		DeleteFunc: controller.deleteMachineToSafety,
 	})
 
 	machineSetInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    controller.addMachineSetToSafety,
 		UpdateFunc: controller.updateMachineSetToSafety,
 	})
-
-	// We follow the kubernetes way of reconciling the safety controller
-	// done by adding empty key objects. We initialize it here to trigger
-	// running of safety loop on MCM startup.
-	controller.machineSafetyQueue.Add("")
 
 	return controller, nil
 }
@@ -327,21 +382,24 @@ type controller struct {
 	awsMachineClassLister       machinelisters.AWSMachineClassLister
 	azureMachineClassLister     machinelisters.AzureMachineClassLister
 	gcpMachineClassLister       machinelisters.GCPMachineClassLister
+	alicloudMachineClassLister  machinelisters.AlicloudMachineClassLister
 	machineLister               machinelisters.MachineLister
 	machineSetLister            machinelisters.MachineSetLister
 	machineDeploymentLister     machinelisters.MachineDeploymentLister
 	// queues
-	secretQueue                workqueue.RateLimitingInterface
-	nodeQueue                  workqueue.RateLimitingInterface
-	nodeToMachineQueue         workqueue.RateLimitingInterface
-	openStackMachineClassQueue workqueue.RateLimitingInterface
-	awsMachineClassQueue       workqueue.RateLimitingInterface
-	azureMachineClassQueue     workqueue.RateLimitingInterface
-	gcpMachineClassQueue       workqueue.RateLimitingInterface
-	machineQueue               workqueue.RateLimitingInterface
-	machineSetQueue            workqueue.RateLimitingInterface
-	machineDeploymentQueue     workqueue.RateLimitingInterface
-	machineSafetyQueue         workqueue.RateLimitingInterface
+	secretQueue                    workqueue.RateLimitingInterface
+	nodeQueue                      workqueue.RateLimitingInterface
+	openStackMachineClassQueue     workqueue.RateLimitingInterface
+	awsMachineClassQueue           workqueue.RateLimitingInterface
+	azureMachineClassQueue         workqueue.RateLimitingInterface
+	gcpMachineClassQueue           workqueue.RateLimitingInterface
+	alicloudMachineClassQueue      workqueue.RateLimitingInterface
+	machineQueue                   workqueue.RateLimitingInterface
+	machineSetQueue                workqueue.RateLimitingInterface
+	machineDeploymentQueue         workqueue.RateLimitingInterface
+	machineSafetyOrphanVMsQueue    workqueue.RateLimitingInterface
+	machineSafetyOvershootingQueue workqueue.RateLimitingInterface
+	machineSafetyAPIServerQueue    workqueue.RateLimitingInterface
 	// syncs
 	secretSynced                cache.InformerSynced
 	nodeSynced                  cache.InformerSynced
@@ -349,47 +407,66 @@ type controller struct {
 	awsMachineClassSynced       cache.InformerSynced
 	azureMachineClassSynced     cache.InformerSynced
 	gcpMachineClassSynced       cache.InformerSynced
+	alicloudMachineClassSynced  cache.InformerSynced
 	machineSynced               cache.InformerSynced
 	machineSetSynced            cache.InformerSynced
 	machineDeploymentSynced     cache.InformerSynced
 }
 
 func (c *controller) Run(workers int, stopCh <-chan struct{}) {
+
+	var (
+		waitGroup sync.WaitGroup
+	)
+
 	defer runtimeutil.HandleCrash()
 	defer c.nodeQueue.ShutDown()
+	defer c.secretQueue.ShutDown()
 	defer c.openStackMachineClassQueue.ShutDown()
 	defer c.awsMachineClassQueue.ShutDown()
 	defer c.azureMachineClassQueue.ShutDown()
 	defer c.gcpMachineClassQueue.ShutDown()
+	defer c.alicloudMachineClassQueue.ShutDown()
 	defer c.machineQueue.ShutDown()
 	defer c.machineSetQueue.ShutDown()
 	defer c.machineDeploymentQueue.ShutDown()
+	defer c.machineSafetyOrphanVMsQueue.ShutDown()
+	defer c.machineSafetyOvershootingQueue.ShutDown()
+	defer c.machineSafetyAPIServerQueue.ShutDown()
 
-	if !cache.WaitForCacheSync(stopCh, c.secretSynced, c.nodeSynced, c.openStackMachineClassSynced, c.awsMachineClassSynced, c.azureMachineClassSynced, c.gcpMachineClassSynced, c.machineSynced, c.machineSetSynced, c.machineDeploymentSynced) {
+	if !cache.WaitForCacheSync(stopCh, c.secretSynced, c.nodeSynced, c.openStackMachineClassSynced, c.awsMachineClassSynced, c.azureMachineClassSynced, c.gcpMachineClassSynced, c.alicloudMachineClassSynced, c.machineSynced, c.machineSetSynced, c.machineDeploymentSynced) {
 		runtimeutil.HandleError(fmt.Errorf("Timed out waiting for caches to sync"))
 		return
 	}
 
-	glog.Info("Starting machine-controller-manager")
-	//glog.Infof("Synced :: %+q", c.awsMachineClassSynced)
-	//time.Sleep(5 * time.Second)
-	var waitGroup sync.WaitGroup
+	glog.V(1).Info("Starting machine-controller-manager")
+	handlers.UpdateHealth(true)
+
+	// The controller implement the prometheus.Collector interface and can therefore
+	// be passed to the metrics registry. Collectors which added to the registry
+	// will collect metrics to expose them via the metrics endpoint of the mcm
+	// every time when the endpoint is called.
+	prometheus.MustRegister(c)
 
 	for i := 0; i < workers; i++ {
 		createWorker(c.openStackMachineClassQueue, "ClusterOpenStackMachineClass", maxRetries, true, c.reconcileClusterOpenStackMachineClassKey, stopCh, &waitGroup)
 		createWorker(c.awsMachineClassQueue, "ClusterAWSMachineClass", maxRetries, true, c.reconcileClusterAWSMachineClassKey, stopCh, &waitGroup)
 		createWorker(c.azureMachineClassQueue, "ClusterAzureMachineClass", maxRetries, true, c.reconcileClusterAzureMachineClassKey, stopCh, &waitGroup)
 		createWorker(c.gcpMachineClassQueue, "ClusterGCPMachineClass", maxRetries, true, c.reconcileClusterGCPMachineClassKey, stopCh, &waitGroup)
+		createWorker(c.alicloudMachineClassQueue, "ClusterAlicloudMachineClass", maxRetries, true, c.reconcileClusterAlicloudMachineClassKey, stopCh, &waitGroup)
+		createWorker(c.secretQueue, "ClusterSecret", maxRetries, true, c.reconcileClusterSecretKey, stopCh, &waitGroup)
 		createWorker(c.nodeQueue, "ClusterNode", maxRetries, true, c.reconcileClusterNodeKey, stopCh, &waitGroup)
 		createWorker(c.machineQueue, "ClusterMachine", maxRetries, true, c.reconcileClusterMachineKey, stopCh, &waitGroup)
-		createWorker(c.nodeToMachineQueue, "ClusterNodeToMachine", maxRetries, true, c.reconcileClusterNodeToMachineKey, stopCh, &waitGroup)
 		createWorker(c.machineSetQueue, "ClusterMachineSet", maxRetries, true, c.reconcileClusterMachineSet, stopCh, &waitGroup)
 		createWorker(c.machineDeploymentQueue, "ClusterMachineDeployment", maxRetries, true, c.reconcileClusterMachineDeployment, stopCh, &waitGroup)
-		createWorker(c.machineSafetyQueue, "ClusterMachineSafety", maxRetries, true, c.reconcileClusterMachineSafety, stopCh, &waitGroup)
+		createWorker(c.machineSafetyOrphanVMsQueue, "ClusterMachineSafetyOrphanVMs", maxRetries, true, c.reconcileClusterMachineSafetyOrphanVMs, stopCh, &waitGroup)
+		createWorker(c.machineSafetyOvershootingQueue, "ClusterMachineSafetyOvershooting", maxRetries, true, c.reconcileClusterMachineSafetyOvershooting, stopCh, &waitGroup)
+		createWorker(c.machineSafetyAPIServerQueue, "ClusterMachineAPIServer", maxRetries, true, c.reconcileClusterMachineSafetyAPIServer, stopCh, &waitGroup)
 	}
 
 	<-stopCh
-	glog.Info("Shutting down Machine Controller Manager ")
+	glog.V(1).Info("Shutting down Machine Controller Manager ")
+	handlers.UpdateHealth(false)
 
 	waitGroup.Wait()
 }

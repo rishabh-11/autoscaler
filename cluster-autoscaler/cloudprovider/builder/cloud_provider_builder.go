@@ -30,6 +30,7 @@ import (
 	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider/gce"
 	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider/gke"
 	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider/kubemark"
+	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider/mcm"
 	"github.com/gardener/autoscaler/cluster-autoscaler/config"
 	"github.com/gardener/autoscaler/cluster-autoscaler/context"
 	"k8s.io/client-go/informers"
@@ -81,6 +82,8 @@ func NewCloudProvider(opts config.AutoscalingOptions) cloudprovider.CloudProvide
 		return buildAzure(opts, do, rl)
 	case kubemark.ProviderName:
 		return buildKubemark(opts, do, rl)
+	case mcm.ProviderName:
+		return buildMCM(opts, do, rl)
 	case "":
 		// Ideally this would be an error, but several unit tests of the
 		// StaticAutoscaler depend on this behaviour.
@@ -225,7 +228,7 @@ func buildKubemark(opts config.AutoscalingOptions, do cloudprovider.NodeGroupDis
 	return provider
 }
 
-func (b CloudProviderBuilder) buildMCM(do cloudprovider.NodeGroupDiscoveryOptions, rl *cloudprovider.ResourceLimiter) cloudprovider.CloudProvider {
+func buildMCM(opts config.AutoscalingOptions, do cloudprovider.NodeGroupDiscoveryOptions, rl *cloudprovider.ResourceLimiter) cloudprovider.CloudProvider {
 	var mcmManager *mcm.McmManager
 	var err error
 	mcmManager, err = mcm.CreateMcmManager(do)

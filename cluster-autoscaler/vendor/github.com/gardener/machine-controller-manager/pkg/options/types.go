@@ -1,6 +1,25 @@
+/*
+Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// Package options is used to specify options to MCM
 package options
 
 import (
+	"time"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -20,7 +39,7 @@ type ClientConnectionConfiguration struct {
 	Burst int
 }
 
-// MachineControllerManagerConfiguration ff
+// MachineControllerManagerConfiguration contains machine configurations
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type MachineControllerManagerConfiguration struct {
 	metav1.TypeMeta
@@ -68,14 +87,36 @@ type SafetyOptions struct {
 	SafetyUp int32
 	// SafetyDown
 	SafetyDown int32
-	// Timeout (in minutes) used while creation/failing of machine before it is declared as failed
-	MachineHealthTimeout int32
-	// Timeout (in minutes) used while draining of machine before deletion,
+
+	// Timeout (in durartion) used while creation of
+	// a machine before it is declared as failed
+	MachineCreationTimeout metav1.Duration
+	// Timeout (in durartion) used while health-check of
+	// a machine before it is declared as failed
+	MachineHealthTimeout metav1.Duration
+	// Timeout (in durartion) used while draining of machine before deletion,
 	// beyond which it forcefully deletes machine
-	MachineDrainTimeout int32
-	// Timeout (in minutes) used while scaling machineSet
-	// if timeout occurs machineSet is permanently frozen
-	MachineSetScaleTimeout int32
+	MachineDrainTimeout metav1.Duration
+	// Timeout (in duration) for which the APIServer can be down before
+	// declare the machine controller frozen by safety controller
+	MachineSafetyAPIServerStatusCheckTimeout metav1.Duration
+
+	// Period (in durartion) used to poll for orphan VMs
+	// by safety controller
+	MachineSafetyOrphanVMsPeriod metav1.Duration
+	// Period (in durartion) used to poll for overshooting
+	// of machine objects backing a machineSet by safety controller
+	MachineSafetyOvershootingPeriod metav1.Duration
+	// Period (in duration) used to poll for APIServer's health
+	// by safety controller
+	MachineSafetyAPIServerStatusCheckPeriod metav1.Duration
+
+	// APIserverInactiveStartTime to keep track of the
+	// start time of when the APIServers were not reachable
+	APIserverInactiveStartTime time.Time
+	// MachineControllerFrozen indicates if the machine controller
+	// is frozen due to Unreachable APIServers
+	MachineControllerFrozen bool
 }
 
 // LeaderElectionConfiguration defines the configuration of leader election

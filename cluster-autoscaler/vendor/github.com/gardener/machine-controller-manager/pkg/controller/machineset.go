@@ -16,7 +16,7 @@ limitations under the License.
 This file was copied and modified from the kubernetes/kubernetes project
 https://github.com/kubernetes/kubernetes/release-1.8/pkg/controller/replicaset/replica_set.go
 
-Modifications Copyright 2017 The Gardener Authors.
+Modifications Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 // Package controller is used to provide the core functionalities of machine-controller-manager
@@ -140,7 +140,7 @@ func (c *controller) machineSetUpdate(old, cur interface{}) {
 	// that bad as MachineSets that haven't met expectations yet won't
 	// sync, and all the listing is done using local stores.
 	if oldMachineSet.Spec.Replicas != currentMachineSet.Spec.Replicas {
-		glog.V(4).Infof("%v %v updated. Desired machine count change: %d->%d", currentMachineSet.Name, oldMachineSet.Spec.Replicas, currentMachineSet.Spec.Replicas)
+		glog.V(4).Infof("%v updated. Desired machine count change: %d->%d", currentMachineSet.Name, oldMachineSet.Spec.Replicas, currentMachineSet.Spec.Replicas)
 	}
 	c.enqueueMachineSet(currentMachineSet)
 }
@@ -335,13 +335,20 @@ func (c *controller) manageReplicas(allMachines []*v1alpha1.Machine, machineSet 
 	}
 
 	if len(staleMachines) >= 1 {
-		glog.V(2).Infof("Deleting stales")
+		glog.V(2).Infof("Deleting stale machines")
 	}
 	c.terminateMachines(staleMachines, machineSet)
 
 	diff := len(activeMachines) - int(machineSet.Spec.Replicas)
+	glog.V(3).Infof("Difference between current active replicas and desired replicas - %d", diff)
+
 	if diff < 0 {
-		//glog.Info("Start Create:", diff)
+		// If MachineSet is frozen and no deletion timestamp, don't process it
+		if machineSet.Labels["freeze"] == "True" && machineSet.DeletionTimestamp == nil {
+			glog.V(2).Infof("MachineSet %q is frozen, and hence not processing", machineSet.Name)
+			return nil
+		}
+
 		diff *= -1
 		if diff > BurstReplicas {
 			diff = BurstReplicas
@@ -352,7 +359,7 @@ func (c *controller) manageReplicas(allMachines []*v1alpha1.Machine, machineSet 
 		// into a performance bottleneck. We should generate a UID for the machine
 		// beforehand and store it via ExpectCreations.
 		c.expectations.ExpectCreations(machineSetKey, diff)
-		glog.V(1).Infof("Too few replicas for MachineSet %s, need %d, creating %d", machineSet.Name, (machineSet.Spec.Replicas), diff)
+		glog.V(2).Infof("Too few replicas for MachineSet %s, need %d, creating %d", machineSet.Name, (machineSet.Spec.Replicas), diff)
 		// Batch the machine creates. Batch sizes start at SlowStartInitialBatchSize
 		// and double with each successful iteration in a kind of "slow start".
 		// This handles attempts to start large numbers of machines that would
@@ -425,16 +432,18 @@ func (c *controller) manageReplicas(allMachines []*v1alpha1.Machine, machineSet 
 // invoked concurrently with the same key.
 func (c *controller) reconcileClusterMachineSet(key string) error {
 	startTime := time.Now()
-	glog.V(4).Infof("Start syncing %q (%v)", key)
+	glog.V(3).Infof("Start syncing %q", key)
 	defer func() {
-		glog.V(4).Infof("Finished syncing %q (%v)", key, time.Since(startTime))
+		glog.V(3).Infof("Finished syncing %q (%v)", key, time.Since(startTime))
 	}()
 
 	_, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
 	}
-	machineSet, err := c.machineSetLister.MachineSets(c.namespace).Get(name)
+
+	// Get the latest version of the machineSet so that we can avoid conflicts
+	machineSet, err := c.controlMachineClient.MachineSets(c.namespace).Get(name, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		glog.V(4).Infof("%v has been deleted", key)
 		c.expectations.DeleteExpectations(key)
@@ -442,12 +451,6 @@ func (c *controller) reconcileClusterMachineSet(key string) error {
 	}
 	if err != nil {
 		return err
-	}
-
-	// If MachineSet is frozen and no deletion timestamp, don't process it
-	if machineSet.Labels["freeze"] == "True" && machineSet.DeletionTimestamp == nil {
-		glog.V(3).Infof("MachineSet %q is frozen, and hence not processeing", machineSet.Name)
-		return nil
 	}
 
 	// Validate MachineSet
@@ -494,26 +497,28 @@ func (c *controller) reconcileClusterMachineSet(key string) error {
 		return err
 	}
 
-	if machineSet.DeletionTimestamp != nil {
-		if finalizers := sets.NewString(machineSet.Finalizers...); !finalizers.Has(DeleteFinalizerName) {
-			return nil
-		}
-		if len(filteredMachines) == 0 {
-			c.deleteMachineSetFinalizers(machineSet)
-			return nil
-		}
-		glog.V(4).Infof("Deleting all child machines as MachineSet %s has set deletionTimestamp", machineSet.Name)
-		c.terminateMachines(filteredMachines, machineSet)
-		return nil
-	}
-
-	machineSetNeedsSync := c.expectations.SatisfiedExpectations(key)
-	glog.V(4).Infof("2 filtered machines length: %v, MachineSetNeedsSync: %v", len(filteredMachines), machineSetNeedsSync)
+	// TODO: Fix working of expectations to reflect correct behaviour
+	//machineSetNeedsSync := c.expectations.SatisfiedExpectations(key)
 	var manageReplicasErr error
-	if machineSetNeedsSync {
+
+	if machineSet.DeletionTimestamp == nil {
+		// manageReplicas is the core machineSet method where scale up/down occurs
+		// It is not called when deletion timestamp is set
 		manageReplicasErr = c.manageReplicas(filteredMachines, machineSet)
+
+	} else if machineSet.DeletionTimestamp != nil {
+		// When machineSet if triggered for deletion
+
+		if len(filteredMachines) == 0 {
+			// If machines backing a machineSet are zero,
+			// remove the machineSetFinalizer
+			c.deleteMachineSetFinalizers(machineSet)
+		} else if finalizers := sets.NewString(machineSet.Finalizers...); finalizers.Has(DeleteFinalizerName) {
+			// Trigger deletion of machines backing the machineSet
+			glog.V(4).Infof("Deleting all child machines as MachineSet %s has set deletionTimestamp", machineSet.Name)
+			c.terminateMachines(filteredMachines, machineSet)
+		}
 	}
-	//glog.V(2).Infof("Print manageReplicasErr: %v ",manageReplicasErr) //Remove
 
 	machineSet = machineSet.DeepCopy()
 	newStatus := calculateMachineSetStatus(machineSet, filteredMachines, manageReplicasErr)
@@ -523,16 +528,14 @@ func (c *controller) reconcileClusterMachineSet(key string) error {
 	if err != nil {
 		// Multiple things could lead to this update failing. Requeuing the machine set ensures
 		// Returning an error causes a requeue without forcing a hotloop
-		glog.V(2).Infof("update machine failed with: %v", err) //Remove
+		if !apierrors.IsNotFound(err) {
+			glog.Errorf("Update machineSet %s failed with: %s", machineSet.Name, err)
+		}
 		return err
 	}
 
-	// Resync the ReplicaSet after MinReadySeconds as a last line of defense to guard against clock-skew.
-	if manageReplicasErr == nil && updatedMachineSet.Spec.MinReadySeconds > 0 &&
-		updatedMachineSet.Status.ReadyReplicas == updatedMachineSet.Spec.Replicas &&
-		updatedMachineSet.Status.AvailableReplicas != updatedMachineSet.Spec.Replicas {
-		c.enqueueMachineSetAfter(updatedMachineSet, time.Duration(updatedMachineSet.Spec.MinReadySeconds)*time.Second)
-	}
+	// Resync the MachineSet after 10 minutes to avoid missing out on missed out events
+	defer c.enqueueMachineSetAfter(updatedMachineSet, 10*time.Minute)
 
 	return manageReplicasErr
 }

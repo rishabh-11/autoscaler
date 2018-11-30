@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Gardener Authors.
+Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -116,7 +116,7 @@ func (c *controller) reconcileClusterGCPMachineClass(class *v1alpha1.GCPMachineC
 	// TODO this should be put in own API server
 	validationerr := validation.ValidateGCPMachineClass(internalClass)
 	if validationerr.ToAggregate() != nil && len(validationerr.ToAggregate().Errors()) > 0 {
-		glog.V(2).Infof("Validation of %s failed %s", GCPMachineClassKind, validationerr.ToAggregate().Error())
+		glog.Errorf("Validation of %s failed %s", GCPMachineClassKind, validationerr.ToAggregate().Error())
 		return nil
 	}
 
@@ -148,7 +148,7 @@ func (c *controller) reconcileClusterGCPMachineClass(class *v1alpha1.GCPMachineC
 			return nil
 		}
 
-		glog.V(4).Infof("Cannot remove finalizer of %s because still Machine[s|Sets|Deployments] are referencing it", GCPMachineClassKind, class.Name)
+		glog.V(4).Infof("Cannot remove finalizer of %s because still Machine[s|Sets|Deployments] are referencing it", class.Name)
 		return nil
 	}
 
@@ -193,7 +193,7 @@ func (c *controller) updateGCPMachineClassFinalizers(class *v1alpha1.GCPMachineC
 	_, err = c.controlMachineClient.GCPMachineClasses(class.Namespace).Update(clone)
 	if err != nil {
 		// Keep retrying until update goes through
-		glog.Warning("Updated failed, retrying")
+		glog.Warning("Updated failed, retrying: ", err)
 		c.updateGCPMachineClassFinalizers(class, finalizers)
 	}
 }

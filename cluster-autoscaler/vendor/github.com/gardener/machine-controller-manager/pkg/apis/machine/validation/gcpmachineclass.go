@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Gardener Authors.
+Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -97,11 +97,11 @@ func validateGCPDisks(disks []*machine.GCPDisk, fldPath *field.Path) field.Error
 		if disk.SizeGb < 20 {
 			allErrs = append(allErrs, field.Invalid(idxPath.Child("sizeGb"), disk.SizeGb, "disk size must be at least 20 GB"))
 		}
-		if disk.Type != "pd-standard" && disk.Type != "pd-sdd" {
+		if disk.Type != "pd-standard" && disk.Type != "pd-ssd" {
 			allErrs = append(allErrs, field.NotSupported(idxPath.Child("type"), disk.Type, []string{"pd-standard", "pd-ssd"}))
 		}
-		if "" == disk.Image {
-			allErrs = append(allErrs, field.Required(idxPath.Child("image"), "image is required"))
+		if disk.Boot && "" == disk.Image {
+			allErrs = append(allErrs, field.Required(idxPath.Child("image"), "image is required for boot disk"))
 		}
 	}
 
