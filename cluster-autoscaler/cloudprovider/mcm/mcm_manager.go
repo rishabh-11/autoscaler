@@ -27,15 +27,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
 	machineapi "github.com/gardener/machine-controller-manager/pkg/client/clientset/versioned/typed/machine/v1alpha1"
 	machineinformers "github.com/gardener/machine-controller-manager/pkg/client/informers/externalversions"
 	machinelisters "github.com/gardener/machine-controller-manager/pkg/client/listers/machine/v1alpha1"
 	corecontroller "github.com/gardener/machine-controller-manager/pkg/controller"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/golang/glog"
 	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
 	"github.com/gardener/autoscaler/cluster-autoscaler/config/dynamic"
+	"github.com/golang/glog"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -44,6 +45,8 @@ const (
 	operationWaitTimeout    = 5 * time.Second
 	operationPollInterval   = 100 * time.Millisecond
 	maxRecordsReturnedByAPI = 100
+	maxRetryDeadline        = 1 * time.Minute
+	conflictRetryInterval   = 5 * time.Second
 )
 
 //McmManager manages the client communication for MachineDeployments.
@@ -170,24 +173,46 @@ func (m *McmManager) GetMachineDeploymentSize(machinedeployment *MachineDeployme
 //SetMachineDeploymentSize sets the desired size for the Machinedeployment.
 func (m *McmManager) SetMachineDeploymentSize(machinedeployment *MachineDeployment, size int64) error {
 
-	md, err := m.machineclient.MachineDeployments(machinedeployment.Namespace).Get(machinedeployment.Name, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("Unable to fetch MachineDeployment object %s Error: %+v", machinedeployment.Name, err)
+	retryDeadline := time.Now().Add(maxRetryDeadline)
+	for {
+		md, err := m.machineclient.MachineDeployments(machinedeployment.Namespace).Get(machinedeployment.Name, metav1.GetOptions{})
+		if err != nil && time.Now().Before(retryDeadline) {
+			glog.Warningf("Unable to fetch MachineDeployment object %s, Error: %+v", machinedeployment.Name, err)
+			time.Sleep(conflictRetryInterval)
+			continue
+		} else if err != nil {
+			// Timeout occurred
+			glog.Errorf("Unable to fetch MachineDeployment object %s, Error: %s", machinedeployment.Name, err)
+			return err
+		}
+
+		clone := md.DeepCopy()
+		clone.Spec.Replicas = int32(size)
+
+		_, err = m.machineclient.MachineDeployments(machinedeployment.Namespace).Update(clone)
+		if err != nil && time.Now().Before(retryDeadline) {
+			glog.Warningf("Unable to update MachineDeployment object %s, Error: %+v", machinedeployment.Name, err)
+			time.Sleep(conflictRetryInterval)
+			continue
+		} else if err != nil {
+			// Timeout occurred
+			glog.Errorf("Unable to update MachineDeployment object %s, Error: %s", machinedeployment.Name, err)
+			return err
+		}
+
+		// Break out of loop when update succeeds
+		break
 	}
-
-	clone := md.DeepCopy()
-	clone.Spec.Replicas = int32(size)
-
-	_, err = m.machineclient.MachineDeployments(machinedeployment.Namespace).Update(clone)
-	if err != nil {
-		return fmt.Errorf("Unable to update MachineDeployment object %s Error: %+v", machinedeployment.Name, err)
-	}
-
 	return nil
 }
 
 //DeleteMachines deletes the Machines and also reduces the desired replicas of the Machinedeplyoment in parallel.
 func (m *McmManager) DeleteMachines(machines []*Ref) error {
+
+	var (
+		mdclone *v1alpha1.MachineDeployment
+	)
+
 	if len(machines) == 0 {
 		return nil
 	}
@@ -208,40 +233,76 @@ func (m *McmManager) DeleteMachines(machines []*Ref) error {
 
 	for _, machine := range machines {
 
-		mach, err := m.machineclient.Machines(machine.Namespace).Get(machine.Name, metav1.GetOptions{})
-		if err != nil {
-			return fmt.Errorf("Unable to fetch Machine object %s", machine.Name)
-		}
+		retryDeadline := time.Now().Add(maxRetryDeadline)
+		for {
+			mach, err := m.machineclient.Machines(machine.Namespace).Get(machine.Name, metav1.GetOptions{})
+			if err != nil && time.Now().Before(retryDeadline) {
+				glog.Warningf("Unable to fetch Machine object %s, Error: %s", machine.Name, err)
+				time.Sleep(conflictRetryInterval)
+				continue
+			} else if err != nil {
+				// Timeout occurred
+				glog.Errorf("Unable to fetch Machine object %s, Error: %s", machine.Name, err)
+				return err
+			}
 
-		mclone := mach.DeepCopy()
+			mclone := mach.DeepCopy()
 
-		if mclone.Annotations != nil {
-			mclone.Annotations["machinepriority.machine.sapcloud.io"] = "1" //TODO: avoid hardcoded string
-		} else {
-			mclone.Annotations = make(map[string]string)
-			mclone.Annotations["machinepriority.machine.sapcloud.io"] = "1"
-		}
+			if mclone.Annotations != nil {
+				mclone.Annotations["machinepriority.machine.sapcloud.io"] = "1" //TODO: avoid hardcoded string
+			} else {
+				mclone.Annotations = make(map[string]string)
+				mclone.Annotations["machinepriority.machine.sapcloud.io"] = "1"
+			}
 
-		_, err = m.machineclient.Machines(machine.Namespace).Update(mclone)
-		if err != nil {
-			return fmt.Errorf("Unable to update Machine object %s", machine.Name)
+			_, err = m.machineclient.Machines(machine.Namespace).Update(mclone)
+			if err != nil && time.Now().Before(retryDeadline) {
+				glog.Warningf("Unable to update Machine object %s, Error: %s", machine.Name, err)
+				time.Sleep(conflictRetryInterval)
+				continue
+			} else if err != nil {
+				// Timeout occurred
+				glog.Errorf("Unable to update Machine object %s, Error: %s", machine.Name, err)
+				return err
+			}
+
+			// Break out of loop when update succeeds
+			break
 		}
 	}
-	md, err := m.machineclient.MachineDeployments(commonMachineDeployment.Namespace).Get(commonMachineDeployment.Name, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("Unable to fetch MachineDeployment object %s", commonMachineDeployment.Name)
-	}
 
-	mdclone := md.DeepCopy()
+	retryDeadline := time.Now().Add(maxRetryDeadline)
+	for {
+		md, err := m.machineclient.MachineDeployments(commonMachineDeployment.Namespace).Get(commonMachineDeployment.Name, metav1.GetOptions{})
+		if err != nil && time.Now().Before(retryDeadline) {
+			glog.Warningf("Unable to fetch MachineDeployment object %s, Error: %s", commonMachineDeployment.Name, err)
+			time.Sleep(conflictRetryInterval)
+			continue
+		} else if err != nil {
+			// Timeout occurred
+			glog.Errorf("Unable to fetch MachineDeployment object %s, Error: %s", commonMachineDeployment.Name, err)
+			return err
+		}
 
-	if (int(mdclone.Spec.Replicas) - len(machines)) <= 0 {
-		return fmt.Errorf("Unable to delete machine in MachineDeployment object %s , machine replicas are <= 0 ", commonMachineDeployment.Name)
-	}
-	mdclone.Spec.Replicas = mdclone.Spec.Replicas - int32(len(machines))
+		mdclone = md.DeepCopy()
+		if (int(mdclone.Spec.Replicas) - len(machines)) <= 0 {
+			return fmt.Errorf("Unable to delete machine in MachineDeployment object %s , machine replicas are <= 0 ", commonMachineDeployment.Name)
+		}
+		mdclone.Spec.Replicas = mdclone.Spec.Replicas - int32(len(machines))
 
-	_, err = m.machineclient.MachineDeployments(mdclone.Namespace).Update(mdclone)
-	if err != nil {
-		return fmt.Errorf("Unable to update MachineDeployment object %s", md.Name)
+		_, err = m.machineclient.MachineDeployments(mdclone.Namespace).Update(mdclone)
+		if err != nil && time.Now().Before(retryDeadline) {
+			glog.Warningf("Unable to update MachineDeployment object %s, Error: %s", commonMachineDeployment.Name, err)
+			time.Sleep(conflictRetryInterval)
+			continue
+		} else if err != nil {
+			// Timeout occurred
+			glog.Errorf("Unable to update MachineDeployment object %s, Error: %s", commonMachineDeployment.Name, err)
+			return err
+		}
+
+		// Break out of loop when update succeeds
+		break
 	}
 
 	glog.V(2).Infof("MachineDeployment %s size decreased to %q", commonMachineDeployment.Name, mdclone.Spec.Replicas)
