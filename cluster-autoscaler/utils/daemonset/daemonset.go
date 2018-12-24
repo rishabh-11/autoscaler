@@ -24,7 +24,7 @@ import (
 
 	apiv1 "k8s.io/api/core/v1"
 	extensionsv1 "k8s.io/api/extensions/v1beta1"
-	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
+	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 )
 
 // GetDaemonSetPodsForNode returns daemonset nodes for the given pod.
@@ -32,7 +32,7 @@ func GetDaemonSetPodsForNode(nodeInfo *schedulercache.NodeInfo, daemonsets []*ex
 	result := make([]*apiv1.Pod, 0)
 	for _, ds := range daemonsets {
 		pod := newPod(ds, nodeInfo.Node().Name)
-		if err := predicateChecker.CheckPredicates(pod, nil, nodeInfo, simulator.ReturnSimpleError); err == nil {
+		if err := predicateChecker.CheckPredicates(pod, nil, nodeInfo); err == nil {
 			result = append(result, pod)
 		}
 	}

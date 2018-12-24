@@ -27,7 +27,7 @@ import (
 	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
 	"github.com/gardener/autoscaler/cluster-autoscaler/expander"
 	"github.com/gardener/autoscaler/cluster-autoscaler/utils/gpu"
-	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
+	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 
 	"github.com/golang/glog"
 )

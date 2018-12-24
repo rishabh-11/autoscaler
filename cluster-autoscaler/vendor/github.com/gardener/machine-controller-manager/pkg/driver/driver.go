@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Gardener Authors.
+Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -73,6 +73,15 @@ func NewDriver(machineID string, secretRef *corev1.Secret, classKind string, mac
 			UserData:        string(secretRef.Data["userData"]),
 			MachineID:       machineID,
 			MachineName:     machineName,
+		}
+
+	case "AlicloudMachineClass":
+		return &AlicloudDriver{
+			AlicloudMachineClass: machineClass.(*v1alpha1.AlicloudMachineClass),
+			CloudConfig:          secretRef,
+			UserData:             string(secretRef.Data["userData"]),
+			MachineID:            machineID,
+			MachineName:          machineName,
 		}
 	}
 

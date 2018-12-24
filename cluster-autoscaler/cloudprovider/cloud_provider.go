@@ -24,8 +24,9 @@ import (
 
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"github.com/gardener/autoscaler/cluster-autoscaler/utils/errors"
-	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
+	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 )
 
 // CloudProvider contains configuration info and functions for interacting with
@@ -53,7 +54,8 @@ type CloudProvider interface {
 	// NewNodeGroup builds a theoretical node group based on the node definition provided. The node group is not automatically
 	// created on the cloud provider side. The node group is not returned by NodeGroups() until it is created.
 	// Implementation optional.
-	NewNodeGroup(machineType string, labels map[string]string, systemLabels map[string]string, extraResources map[string]resource.Quantity) (NodeGroup, error)
+	NewNodeGroup(machineType string, labels map[string]string, systemLabels map[string]string,
+		taints []apiv1.Taint, extraResources map[string]resource.Quantity) (NodeGroup, error)
 
 	// GetResourceLimiter returns struct containing limits (max, min) for resources (cores, memory etc.).
 	GetResourceLimiter() (*ResourceLimiter, error)
@@ -130,7 +132,7 @@ type NodeGroup interface {
 	Exist() bool
 
 	// Create creates the node group on the cloud provider side. Implementation optional.
-	Create() error
+	Create() (NodeGroup, error)
 
 	// Delete deletes the node group on the cloud provider side.
 	// This will be executed only for autoprovisioned node groups, once their size drops to 0.
@@ -157,9 +159,26 @@ const (
 	// ResourceNameCores is string name for cores. It's used by ResourceLimiter.
 	ResourceNameCores = "cpu"
 	// ResourceNameMemory is string name for memory. It's used by ResourceLimiter.
-	// Memory should always be provided in megabytes.
+	// Memory should always be provided in bytes.
 	ResourceNameMemory = "memory"
 )
+
+// IsGpuResource checks if given resource name point denotes a gpu type
+func IsGpuResource(resourceName string) bool {
+	// hack: we assume anything which is not cpu/memory to be a gpu.
+	// we are not getting anything more that a map string->limits from the user
+	return resourceName != ResourceNameCores && resourceName != ResourceNameMemory
+}
+
+// ContainsGpuResources returns true iff given list contains any resource name denoting a gpu type
+func ContainsGpuResources(resources []string) bool {
+	for _, resource := range resources {
+		if IsGpuResource(resource) {
+			return true
+		}
+	}
+	return false
+}
 
 // ResourceLimiter contains limits (max, min) for resources (cores, memory etc.).
 type ResourceLimiter struct {
@@ -172,7 +191,9 @@ func NewResourceLimiter(minLimits map[string]int64, maxLimits map[string]int64) 
 	minLimitsCopy := make(map[string]int64)
 	maxLimitsCopy := make(map[string]int64)
 	for key, value := range minLimits {
-		minLimitsCopy[key] = value
+		if value > 0 {
+			minLimitsCopy[key] = value
+		}
 	}
 	for key, value := range maxLimits {
 		maxLimitsCopy[key] = value
@@ -198,13 +219,32 @@ func (r *ResourceLimiter) GetMax(resourceName string) int64 {
 	return math.MaxInt64
 }
 
+// GetResources returns list of all resource names for which min or max limits are defined
+func (r *ResourceLimiter) GetResources() []string {
+	minResources := sets.StringKeySet(r.minLimits)
+	maxResources := sets.StringKeySet(r.maxLimits)
+	return minResources.Union(maxResources).List()
+}
+
+// HasMinLimitSet returns true iff minimal limit is set for given resource.
+func (r *ResourceLimiter) HasMinLimitSet(resourceName string) bool {
+	_, found := r.minLimits[resourceName]
+	return found
+}
+
+// HasMaxLimitSet returns true iff maximal limit is set for given resource.
+func (r *ResourceLimiter) HasMaxLimitSet(resourceName string) bool {
+	_, found := r.maxLimits[resourceName]
+	return found
+}
+
 func (r *ResourceLimiter) String() string {
 	var buffer bytes.Buffer
-	for name, maxLimit := range r.maxLimits {
+	for _, name := range r.GetResources() {
 		if buffer.Len() > 0 {
 			buffer.WriteString(", ")
 		}
-		buffer.WriteString(fmt.Sprintf("{%s : %d - %d}", name, r.minLimits[name], maxLimit))
+		buffer.WriteString(fmt.Sprintf("{%s : %d - %d}", name, r.GetMin(name), r.GetMax(name)))
 	}
 	return buffer.String()
 }

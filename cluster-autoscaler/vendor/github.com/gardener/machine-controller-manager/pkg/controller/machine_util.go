@@ -16,7 +16,7 @@ limitations under the License.
 This file was copied and modified from the kubernetes/kubernetes project
 https://github.com/kubernetes/kubernetes/release-1.8/pkg/controller/deployment/util/pod_util.go
 
-Modifications Copyright 2017 The Gardener Authors.
+Modifications Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 // Package controller is used to provide the core functionalities of machine-controller-manager
@@ -87,7 +87,7 @@ func (c *controller) validateMachineClass(classSpec *v1alpha1.ClassSpec) (interf
 		internalAWSMachineClass := &machineapi.AWSMachineClass{}
 		err = c.internalExternalScheme.Convert(AWSMachineClass, internalAWSMachineClass, nil)
 		if err != nil {
-			glog.V(2).Info("Error in scheme convertion")
+			glog.V(2).Info("Error in scheme conversion")
 			return MachineClass, secretRef, err
 		}
 
@@ -117,7 +117,7 @@ func (c *controller) validateMachineClass(classSpec *v1alpha1.ClassSpec) (interf
 		internalAzureMachineClass := &machineapi.AzureMachineClass{}
 		err = c.internalExternalScheme.Convert(AzureMachineClass, internalAzureMachineClass, nil)
 		if err != nil {
-			glog.V(2).Info("Error in scheme convertion")
+			glog.V(2).Info("Error in scheme conversion")
 			return MachineClass, secretRef, err
 		}
 
@@ -148,7 +148,7 @@ func (c *controller) validateMachineClass(classSpec *v1alpha1.ClassSpec) (interf
 		internalGCPMachineClass := &machineapi.GCPMachineClass{}
 		err = c.internalExternalScheme.Convert(GCPMachineClass, internalGCPMachineClass, nil)
 		if err != nil {
-			glog.V(2).Info("Error in scheme convertion")
+			glog.V(2).Info("Error in scheme conversion")
 			return MachineClass, secretRef, err
 		}
 
@@ -164,6 +164,7 @@ func (c *controller) validateMachineClass(classSpec *v1alpha1.ClassSpec) (interf
 			glog.V(2).Info("Secret reference not found")
 			return MachineClass, secretRef, err
 		}
+
 	} else if classSpec.Kind == "OpenStackMachineClass" {
 
 		OpenStackMachineClass, err := c.openStackMachineClassLister.OpenStackMachineClasses(c.namespace).Get(classSpec.Name)
@@ -177,7 +178,7 @@ func (c *controller) validateMachineClass(classSpec *v1alpha1.ClassSpec) (interf
 		internalOpenStackMachineClass := &machineapi.OpenStackMachineClass{}
 		err = c.internalExternalScheme.Convert(OpenStackMachineClass, internalOpenStackMachineClass, nil)
 		if err != nil {
-			glog.V(2).Info("Error in scheme convertion")
+			glog.V(2).Info("Error in scheme conversion")
 			return MachineClass, secretRef, err
 		}
 
@@ -193,9 +194,56 @@ func (c *controller) validateMachineClass(classSpec *v1alpha1.ClassSpec) (interf
 			glog.V(2).Info("Secret reference not found")
 			return MachineClass, secretRef, err
 		}
+
+	} else if classSpec.Kind == "AlicloudMachineClass" {
+
+		AlicloudMachineClass, err := c.alicloudMachineClassLister.AlicloudMachineClasses(c.namespace).Get(classSpec.Name)
+		if err != nil {
+			glog.V(2).Infof("AlicloudMachineClass %q/%q not found. Skipping. %v", c.namespace, classSpec.Name, err)
+			return MachineClass, secretRef, err
+		}
+		MachineClass = AlicloudMachineClass
+
+		// Validate AlicloudMachineClass
+		internalAlicloudMachineClass := &machineapi.AlicloudMachineClass{}
+		err = c.internalExternalScheme.Convert(AlicloudMachineClass, internalAlicloudMachineClass, nil)
+		if err != nil {
+			glog.V(2).Info("Error in scheme convertion")
+			return MachineClass, secretRef, err
+		}
+
+		validationerr := validation.ValidateAlicloudMachineClass(internalAlicloudMachineClass)
+		if validationerr.ToAggregate() != nil && len(validationerr.ToAggregate().Errors()) > 0 {
+			glog.V(2).Infof("Validation of AlicloudMachineClass failed %s", validationerr.ToAggregate().Error())
+			return MachineClass, secretRef, nil
+		}
+
+		// Get secretRef
+		secretRef, err = c.getSecret(AlicloudMachineClass.Spec.SecretRef, AlicloudMachineClass.Name)
+		if err != nil || secretRef == nil {
+			glog.V(2).Info("Secret reference not found")
+			return MachineClass, secretRef, err
+		}
+
 	} else {
 		glog.V(2).Infof("ClassKind %q not found", classSpec.Kind)
 	}
 
 	return MachineClass, secretRef, nil
+}
+
+// nodeConditionsHaveChanged compares two node statuses to see if any of the statuses have changed
+func nodeConditionsHaveChanged(machineConditions []v1.NodeCondition, nodeConditions []v1.NodeCondition) bool {
+
+	if len(machineConditions) != len(nodeConditions) {
+		return true
+	}
+
+	for i := range nodeConditions {
+		if nodeConditions[i].Status != machineConditions[i].Status {
+			return true
+		}
+	}
+
+	return false
 }

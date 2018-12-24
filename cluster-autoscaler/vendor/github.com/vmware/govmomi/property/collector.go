@@ -111,6 +111,12 @@ func (p *Collector) WaitForUpdates(ctx context.Context, v string) (*types.Update
 	return res.Returnval, nil
 }
 
+func (p *Collector) CancelWaitForUpdates(ctx context.Context) error {
+	req := &types.CancelWaitForUpdates{This: p.Reference()}
+	_, err := methods.CancelWaitForUpdates(ctx, p.roundTripper, req)
+	return err
+}
+
 func (p *Collector) RetrieveProperties(ctx context.Context, req types.RetrieveProperties) (*types.RetrievePropertiesResponse, error) {
 	req.This = p.Reference()
 	return methods.RetrieveProperties(ctx, p.roundTripper, &req)
@@ -125,25 +131,23 @@ func (p *Collector) Retrieve(ctx context.Context, objs []types.ManagedObjectRefe
 		return errors.New("object references is empty")
 	}
 
-	var propSpec *types.PropertySpec
+	kinds := make(map[string]bool)
+
+	var propSet []types.PropertySpec
 	var objectSet []types.ObjectSpec
 
 	for _, obj := range objs {
-		// Ensure that all object reference types are the same
-		if propSpec == nil {
-			propSpec = &types.PropertySpec{
+		if _, ok := kinds[obj.Type]; !ok {
+			spec := types.PropertySpec{
 				Type: obj.Type,
 			}
-
 			if ps == nil {
-				propSpec.All = types.NewBool(true)
+				spec.All = types.NewBool(true)
 			} else {
-				propSpec.PathSet = ps
+				spec.PathSet = ps
 			}
-		} else {
-			if obj.Type != propSpec.Type {
-				return errors.New("object references must have the same type")
-			}
+			propSet = append(propSet, spec)
+			kinds[obj.Type] = true
 		}
 
 		objectSpec := types.ObjectSpec{
@@ -158,7 +162,7 @@ func (p *Collector) Retrieve(ctx context.Context, objs []types.ManagedObjectRefe
 		SpecSet: []types.PropertyFilterSpec{
 			{
 				ObjectSet: objectSet,
-				PropSet:   []types.PropertySpec{*propSpec},
+				PropSet:   propSet,
 			},
 		},
 	}

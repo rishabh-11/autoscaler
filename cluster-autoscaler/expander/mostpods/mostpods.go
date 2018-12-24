@@ -19,7 +19,7 @@ package mostpods
 import (
 	"github.com/gardener/autoscaler/cluster-autoscaler/expander"
 	"github.com/gardener/autoscaler/cluster-autoscaler/expander/random"
-	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
+	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 )
 
 type mostpods struct {

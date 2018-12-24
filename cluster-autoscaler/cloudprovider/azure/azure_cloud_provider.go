@@ -70,7 +70,7 @@ func (azure *AzureCloudProvider) NodeGroups() []cloudprovider.NodeGroup {
 
 // NodeGroupForNode returns the node group for the given node.
 func (azure *AzureCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprovider.NodeGroup, error) {
-	glog.V(6).Infof("Searching for node group for the node: %s, %s\n", node.Spec.ExternalID, node.Spec.ProviderID)
+	glog.V(6).Infof("Searching for node group for the node: %s\n", node.Spec.ProviderID)
 	ref := &azureRef{
 		Name: node.Spec.ProviderID,
 	}
@@ -90,7 +90,8 @@ func (azure *AzureCloudProvider) GetAvailableMachineTypes() ([]string, error) {
 
 // NewNodeGroup builds a theoretical node group based on the node definition provided. The node group is not automatically
 // created on the cloud provider side. The node group is not returned by NodeGroups() until it is created.
-func (azure *AzureCloudProvider) NewNodeGroup(machineType string, labels map[string]string, systemLabels map[string]string, extraResources map[string]resource.Quantity) (cloudprovider.NodeGroup, error) {
+func (azure *AzureCloudProvider) NewNodeGroup(machineType string, labels map[string]string, systemLabels map[string]string,
+	taints []apiv1.Taint, extraResources map[string]resource.Quantity) (cloudprovider.NodeGroup, error) {
 	return nil, cloudprovider.ErrNotImplemented
 }
 

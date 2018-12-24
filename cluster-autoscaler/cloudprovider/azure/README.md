@@ -10,10 +10,14 @@ Cluster autoscaler supports four VM types with Azure cloud provider:
 
 - **vmss**: For kubernetes cluster running on VMSS instances. Azure cloud provider's `vmType` parameter must be configured as 'vmss'. It requires Kubernetes with Azure VMSS support ([kubernetes#43287](https://github.com/kubernetes/kubernetes/issues/43287)).
 - **standard**: For kubernetes cluster running on VMAS instances. Azure cloud provider's `vmType` parameter must be configured as 'standard' or left as empty string. It only supports Kubernetes cluster deployed via [acs-engine](https://github.com/Azure/acs-engine).
-- **aks**": Managed Container Service([AKS](https://docs.microsoft.com/en-us/azure/aks/))
-- **acs**": Container service([ACS](https://docs.microsoft.com/en-us/azure/container-service/kubernetes/))
+- **aks**: Managed Container Service([AKS](https://docs.microsoft.com/en-us/azure/aks/))
+- **acs**: Container service([ACS](https://docs.microsoft.com/en-us/azure/container-service/kubernetes/))
 
 Only **vmss** vmType supports scaling to zero nodes.
+
+## CA Version
+
+You need to replace a placeholder, '{{ ca_version }}' in manifests with CA Version such as v1.2.2.
 
 ## Permissions
 
@@ -126,16 +130,15 @@ To run a CA pod with Azure managed service identity (MSI), use [cluster-autoscal
 kubectl create -f cluster-autoscaler-standard-msi.yaml
 ```
 
-### AKS or ACS deployment
+**WARNING**: Cluster autoscaler depends on user provided deployment parameters to provision new nodes. It should be redeployed with new parameters after upgrading Kubernetes cluster (e.g. upgraded by `acs-engine upgrade` command), or else new nodes will be provisioned with old version.
+
+### ACS deployment
 
 Pre-requirements:
 
 - Get credentials from above `permissions` step.
 - Get the cluster name using the following:
 
-  for AKS:
-  ```sh
-  az aks list
   ```
   for ACS:
   ```sh
@@ -146,8 +149,6 @@ Pre-requirements:
   ```sh
   kubectl get nodes --show-labels
   ```
-- In case of AKS we need additional information in the form of node resource group.
-  Use the value of the label by name **kubernetes.azure.com/cluster** as the node resource group.
 
 - Encode each data with base64.
 
@@ -155,36 +156,34 @@ Fill the values of cluster-autoscaler-azure secret in [cluster-autoscaler-contai
 
 - ClientID: `<base64-encoded-client-id>`
 - ClientSecret: `<base64-encoded-client-secret>`
-- ResourceGroup: `<base64-encoded-resource-group>`
+- ResourceGroup: `<base64-encoded-resource-group>` (Note: Please use lower case)
 - SubscriptionID: `<base64-encode-subscription-id>`
 - TenantID: `<base64-encoded-tenant-id>`
-- Deployment: `<base64-encoded-azure-initial-deploy-name>`
 - ClusterName: `<base64-encoded-clustername>`
-- NodeResourceGroup: `<base64-encoded-node-resource-group>`
-
 
 > Note that all data above should be encoded with base64.
-> Note: Please use lower case for the ResourceGroup and NodeResourceGroup
 
-And fill the node groups in container command by `--nodes`, with the range of nodes (minimum to be set as 3 which is the default cluster size) and 
-node pool name obained from Pre-requirements steps above, e.g.
+
+And fill the node groups in container command by `--nodes`, with the range of nodes (minimum to be set as 3 which is the default cluster size) and node pool name obtained from pre-requirements steps above, e.g.
 
 ```yaml
         - --nodes=3:10:nodepool1
 ```
+
 The vmType param determines the kind of service we are interacting with.
-For AKS fill the following base64 encoded value:
-```sh
-$ echo AKS | base64
-QUtTCg==
-```
-and for ACS fill the following base64 encoded value:
+For ACS fill the following base64 encoded value:
+
 ```sh
 $echo ACS | base64
 QUNTCg==
 ```
+
 Then deploy cluster-autoscaler by running
 
 ```sh
 kubectl create -f cluster-autoscaler-containerservice.yaml
 ```
+
+### AKS deployment
+
+Take a look at these docs here: https://docs.microsoft.com/en-us/azure/aks/autoscaler

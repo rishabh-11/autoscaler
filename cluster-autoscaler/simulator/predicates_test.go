@@ -22,7 +22,7 @@ import (
 	"time"
 
 	. "github.com/gardener/autoscaler/cluster-autoscaler/utils/test"
-	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
+	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -56,11 +56,14 @@ func TestPredicates(t *testing.T) {
 	_, err = predicateChecker.FitsAny(p3, nodeInfos)
 	assert.Error(t, err)
 
-	err = predicateChecker.CheckPredicates(p2, nil, ni1, ReturnVerboseError)
-	assert.True(t, strings.Contains(err.Error(), "Insufficient cpu"))
-	assert.Error(t, predicateChecker.CheckPredicates(p2, nil, ni1, ReturnVerboseError))
-	assert.NoError(t, predicateChecker.CheckPredicates(p4, nil, ni1, ReturnVerboseError))
-	assert.NoError(t, predicateChecker.CheckPredicates(p2, nil, ni2, ReturnVerboseError))
-	assert.NoError(t, predicateChecker.CheckPredicates(p4, nil, ni2, ReturnVerboseError))
-	assert.Error(t, predicateChecker.CheckPredicates(p3, nil, ni2, ReturnVerboseError))
+	predicateErr := predicateChecker.CheckPredicates(p2, nil, ni1)
+	assert.NotNil(t, predicateErr)
+	assert.True(t, strings.Contains(predicateErr.Error(), "Predicates failed"))
+	assert.True(t, strings.Contains(predicateErr.VerboseError(), "Insufficient cpu"))
+
+	assert.NotNil(t, predicateChecker.CheckPredicates(p2, nil, ni1))
+	assert.Nil(t, predicateChecker.CheckPredicates(p4, nil, ni1))
+	assert.Nil(t, predicateChecker.CheckPredicates(p2, nil, ni2))
+	assert.Nil(t, predicateChecker.CheckPredicates(p4, nil, ni2))
+	assert.NotNil(t, predicateChecker.CheckPredicates(p3, nil, ni2))
 }

@@ -25,13 +25,13 @@ import (
 	"fmt"
 	"strings"
 
-	apiv1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
 	"github.com/gardener/autoscaler/cluster-autoscaler/config/dynamic"
 	"github.com/gardener/autoscaler/cluster-autoscaler/utils/errors"
-	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
+	apiv1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 )
 
 const (
@@ -130,7 +130,7 @@ func (mcm *mcmCloudProvider) GetAvailableMachineTypes() ([]string, error) {
 // NewNodeGroup builds a theoretical node group based on the node definition provided. The node group is not automatically
 // created on the cloud provider side. The node group is not returned by NodeGroups() until it is created.
 func (mcm *mcmCloudProvider) NewNodeGroup(machineType string, labels map[string]string, systemLabels map[string]string,
-	extraResources map[string]resource.Quantity) (cloudprovider.NodeGroup, error) {
+	taints []apiv1.Taint, extraResources map[string]resource.Quantity) (cloudprovider.NodeGroup, error) {
 	return nil, cloudprovider.ErrNotImplemented
 }
 
@@ -213,8 +213,8 @@ func (machinedeployment *MachineDeployment) Exist() bool {
 }
 
 // Create creates the node group on the cloud provider side.
-func (machinedeployment *MachineDeployment) Create() error {
-	return cloudprovider.ErrAlreadyExist
+func (machinedeployment *MachineDeployment) Create() (cloudprovider.NodeGroup, error) {
+	return nil, cloudprovider.ErrAlreadyExist
 }
 
 // Autoprovisioned returns true if the node group is autoprovisioned.

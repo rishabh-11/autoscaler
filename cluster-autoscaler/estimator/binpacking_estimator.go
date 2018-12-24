@@ -22,7 +22,7 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"github.com/gardener/autoscaler/cluster-autoscaler/simulator"
-	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
+	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 )
 
 // podInfo contains Pod and score that corresponds to how important it is to handle the pod first.
@@ -30,12 +30,6 @@ type podInfo struct {
 	score float64
 	pod   *apiv1.Pod
 }
-
-type byScoreDesc []*podInfo
-
-func (a byScoreDesc) Len() int           { return len(a) }
-func (a byScoreDesc) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a byScoreDesc) Less(i, j int) bool { return a[i].score > a[j].score }
 
 // BinpackingNodeEstimator estimates the number of needed nodes to handle the given amount of pods.
 type BinpackingNodeEstimator struct {
@@ -60,7 +54,7 @@ func (estimator *BinpackingNodeEstimator) Estimate(pods []*apiv1.Pod, nodeTempla
 	comingNodes []*schedulercache.NodeInfo) int {
 
 	podInfos := calculatePodScore(pods, nodeTemplate)
-	sort.Sort(byScoreDesc(podInfos))
+	sort.Slice(podInfos, func(i, j int) bool { return podInfos[i].score > podInfos[j].score })
 
 	// nodeWithPod function returns NodeInfo, which is a copy of nodeInfo argument with an additional pod scheduled on it.
 	nodeWithPod := func(nodeInfo *schedulercache.NodeInfo, pod *apiv1.Pod) *schedulercache.NodeInfo {
@@ -77,7 +71,7 @@ func (estimator *BinpackingNodeEstimator) Estimate(pods []*apiv1.Pod, nodeTempla
 	for _, podInfo := range podInfos {
 		found := false
 		for i, nodeInfo := range newNodes {
-			if err := estimator.predicateChecker.CheckPredicates(podInfo.pod, nil, nodeInfo, simulator.ReturnSimpleError); err == nil {
+			if err := estimator.predicateChecker.CheckPredicates(podInfo.pod, nil, nodeInfo); err == nil {
 				found = true
 				newNodes[i] = nodeWithPod(nodeInfo, podInfo.pod)
 				break

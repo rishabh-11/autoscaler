@@ -1,18 +1,8 @@
-commit 9b9536a51bcc628064da6468ba21668896f48bf4 (origin/release-1.10)
-Merge: 1602726267 f1a24f4b2c
-Author: Kubernetes Submit Queue <k8s-merge-robot@users.noreply.github.com>
-Date:   Mon Apr 9 18:56:06 2018 -0700
+commit d05f0e76b094d85df3a071ff80c27d66a0c05695 (origin/release-1.12)
+Merge: d3bc471868 7d4b3e7a6f
+Author: k8s-ci-robot <k8s-ci-robot@users.noreply.github.com>
+Date:   Sun Nov 4 21:48:17 2018 -0800
 
-    Merge pull request #62228 from dims/automated-cherry-pick-of-#61890-upstream-release-1.10
+    Merge pull request #70399 from feiskyer/automated-cherry-pick-of-#70353-upstream-release-1.12
     
-    Automatic merge from submit-queue.
-    
-    Automated cherry pick of #61890: Specify DHCP domain for hostname
-    
-    Cherry pick of #61890 on release-1.10.
-    
-    #61890: Specify DHCP domain for hostname
-    
-    ```release-note
-    Fixing bug in openstack cloud provider when picking up hostname from metadata service or config drive. If the hostname has a custom domain, we should remove the domain before we use the hostname as the node name in kubernetes.
-    ```
+    Automated cherry pick of #70353: Improve Azure instance metadata handling

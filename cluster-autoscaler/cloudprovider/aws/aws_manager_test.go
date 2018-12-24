@@ -18,14 +18,13 @@ package aws
 
 import (
 	"fmt"
-	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/mock"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	apiv1 "k8s.io/api/core/v1"
 	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
 	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
@@ -72,8 +71,24 @@ func TestExtractTaintsFromAsg(t *testing.T) {
 			Value: aws.String("foo:NoSchedule"),
 		},
 		{
+			Key:   aws.String("k8s.io/cluster-autoscaler/node-template/taint/group"),
+			Value: aws.String("bar:NoExecute"),
+		},
+		{
+			Key:   aws.String("k8s.io/cluster-autoscaler/node-template/taint/app"),
+			Value: aws.String("fizz:PreferNoSchedule"),
+		},
+		{
 			Key:   aws.String("bar"),
 			Value: aws.String("baz"),
+		},
+		{
+			Key:   aws.String("k8s.io/cluster-autoscaler/node-template/taint/blank"),
+			Value: aws.String(""),
+		},
+		{
+			Key:   aws.String("k8s.io/cluster-autoscaler/node-template/taint/nosplit"),
+			Value: aws.String("some_value"),
 		},
 	}
 
@@ -83,10 +98,20 @@ func TestExtractTaintsFromAsg(t *testing.T) {
 			Value:  "foo",
 			Effect: apiv1.TaintEffectNoSchedule,
 		},
+		{
+			Key:    "group",
+			Value:  "bar",
+			Effect: apiv1.TaintEffectNoExecute,
+		},
+		{
+			Key:    "app",
+			Value:  "fizz",
+			Effect: apiv1.TaintEffectPreferNoSchedule,
+		},
 	}
 
 	taints := extractTaintsFromAsg(tags)
-	assert.Equal(t, 1, len(taints))
+	assert.Equal(t, 3, len(taints))
 	assert.Equal(t, makeTaintSet(expectedTaints), makeTaintSet(taints))
 }
 
@@ -96,34 +121,6 @@ func makeTaintSet(taints []apiv1.Taint) map[apiv1.Taint]bool {
 		set[taint] = true
 	}
 	return set
-}
-func TestBuildAsg(t *testing.T) {
-	do := cloudprovider.NodeGroupDiscoveryOptions{}
-	m, err := createAWSManagerInternal(nil, do, &testService)
-	assert.NoError(t, err)
-
-	asg, err := m.buildAsgFromSpec("1:5:test-asg")
-	assert.NoError(t, err)
-	assert.Equal(t, asg.MinSize(), 1)
-	assert.Equal(t, asg.MaxSize(), 5)
-	assert.Equal(t, asg.Id(), "test-asg")
-	assert.Equal(t, asg.Name, "test-asg")
-	assert.Equal(t, asg.Debug(), "test-asg (1:5)")
-
-	_, err = m.buildAsgFromSpec("a")
-	assert.Error(t, err)
-	_, err = m.buildAsgFromSpec("a:b:c")
-	assert.Error(t, err)
-	_, err = m.buildAsgFromSpec("1:")
-	assert.Error(t, err)
-	_, err = m.buildAsgFromSpec("1:2:")
-	assert.Error(t, err)
-}
-
-func validateAsg(t *testing.T, asg *Asg, name string, minSize int, maxSize int) {
-	assert.Equal(t, name, asg.Name)
-	assert.Equal(t, minSize, asg.minSize)
-	assert.Equal(t, maxSize, asg.maxSize)
 }
 
 func TestFetchExplicitAsgs(t *testing.T) {
@@ -158,19 +155,51 @@ func TestFetchExplicitAsgs(t *testing.T) {
 		// The intention is to test that the asgs.Register method will update
 		// the node group instead of registering it twice.
 		NodeGroupSpecs: []string{
-			fmt.Sprintf("%d:%d:%s", min, max-1, groupname),
 			fmt.Sprintf("%d:%d:%s", min, max, groupname),
+			fmt.Sprintf("%d:%d:%s", min, max-1, groupname),
 		},
 	}
 	// fetchExplicitASGs is called at manager creation time.
-	m, err := createAWSManagerInternal(nil, do, &autoScalingWrapper{s})
+	m, err := createAWSManagerInternal(nil, do, &autoScalingWrapper{s}, nil)
 	assert.NoError(t, err)
 
-	asgs := m.asgCache.get()
+	asgs := m.asgCache.Get()
 	assert.Equal(t, 1, len(asgs))
-	validateAsg(t, asgs[0].config, groupname, min, max)
+	validateAsg(t, asgs[0], groupname, min, max)
 }
 
+func TestBuildInstanceType(t *testing.T) {
+	ltName, ltVersion, instanceType := "launcher", "1", "t2.large"
+
+	s := &EC2Mock{}
+	s.On("DescribeLaunchTemplateVersions", &ec2.DescribeLaunchTemplateVersionsInput{
+		LaunchTemplateName: aws.String(ltName),
+		Versions:           []*string{aws.String(ltVersion)},
+	}).Return(&ec2.DescribeLaunchTemplateVersionsOutput{
+		LaunchTemplateVersions: []*ec2.LaunchTemplateVersion{
+			{
+				LaunchTemplateData: &ec2.ResponseLaunchTemplateData{
+					InstanceType: aws.String(instanceType),
+				},
+			},
+		},
+	})
+
+	m, err := createAWSManagerInternal(nil, cloudprovider.NodeGroupDiscoveryOptions{}, nil, &ec2Wrapper{s})
+	assert.NoError(t, err)
+
+	asg := asg{
+		LaunchTemplateName:    ltName,
+		LaunchTemplateVersion: ltVersion,
+	}
+
+	builtInstanceType, err := m.buildInstanceType(&asg)
+
+	assert.NoError(t, err)
+	assert.Equal(t, instanceType, builtInstanceType)
+}
+
+/* Disabled due to flakiness. See https://github.com/kubernetes/autoscaler/issues/608
 func TestFetchAutoAsgs(t *testing.T) {
 	min, max := 1, 10
 	groupname, tags := "coolasg", []string{"tag", "anothertag"}
@@ -244,3 +273,4 @@ func TestFetchAutoAsgs(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Empty(t, m.asgCache.get())
 }
+*/

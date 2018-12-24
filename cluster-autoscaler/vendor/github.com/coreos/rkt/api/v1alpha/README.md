@@ -2,7 +2,7 @@
 
 The API defined here is proposed, experimental, and (for now) subject to change at any time.
 
-If you think you want to use it, or for any other queries, contact <rkt-dev@googlegroups.com> or file an [issue](https://github.com/coreos/rkt/issues/new)
+If you think you want to use it, or for any other queries, contact <rkt-dev@googlegroups.com> or file an [issue](https://github.com/rkt/rkt/issues/new)
 
 For more information, see:
 - #1208
@@ -19,3 +19,7 @@ and execute from the top-level directory:
 ```
 $ make protobuf
 ```
+
+## Documentation
+
+HTML and Markdown Protobuf documentation is automatically generated and placed in [docs](docs/).

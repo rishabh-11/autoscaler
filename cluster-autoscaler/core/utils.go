@@ -18,7 +18,6 @@ package core
 
 import (
 	"fmt"
-	"math"
 	"math/rand"
 	"reflect"
 	"time"
@@ -26,6 +25,7 @@ import (
 	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
 	"github.com/gardener/autoscaler/cluster-autoscaler/clusterstate"
 	"github.com/gardener/autoscaler/cluster-autoscaler/clusterstate/utils"
+	"github.com/gardener/autoscaler/cluster-autoscaler/context"
 	"github.com/gardener/autoscaler/cluster-autoscaler/metrics"
 	"github.com/gardener/autoscaler/cluster-autoscaler/simulator"
 	"github.com/gardener/autoscaler/cluster-autoscaler/utils/daemonset"
@@ -42,7 +42,7 @@ import (
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	kube_client "k8s.io/client-go/kubernetes"
 	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
-	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
+	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 
 	"github.com/golang/glog"
 )
@@ -67,9 +67,9 @@ const (
 // UID as a key in initial lookup and only run full comparison on a set of
 // podSchedulableInfos created for pods owned by this controller.
 type podSchedulableInfo struct {
-	spec        apiv1.PodSpec
-	labels      map[string]string
-	schedulable bool
+	spec            apiv1.PodSpec
+	labels          map[string]string
+	schedulingError *simulator.PredicateError
 }
 
 type podSchedulableMap map[string][]podSchedulableInfo
@@ -78,32 +78,32 @@ func (psi *podSchedulableInfo) match(pod *apiv1.Pod) bool {
 	return reflect.DeepEqual(pod.Labels, psi.labels) && apiequality.Semantic.DeepEqual(pod.Spec, psi.spec)
 }
 
-func (podMap podSchedulableMap) get(pod *apiv1.Pod) (bool, bool) {
+func (podMap podSchedulableMap) get(pod *apiv1.Pod) (*simulator.PredicateError, bool) {
 	ref := drain.ControllerRef(pod)
 	if ref == nil {
-		return false, false
+		return nil, false
 	}
 	uid := string(ref.UID)
 	if infos, found := podMap[uid]; found {
 		for _, info := range infos {
 			if info.match(pod) {
-				return info.schedulable, true
+				return info.schedulingError, true
 			}
 		}
 	}
-	return false, false
+	return nil, false
 }
 
-func (podMap podSchedulableMap) set(pod *apiv1.Pod, schedulable bool) {
+func (podMap podSchedulableMap) set(pod *apiv1.Pod, err *simulator.PredicateError) {
 	ref := drain.ControllerRef(pod)
 	if ref == nil {
 		return
 	}
 	uid := string(ref.UID)
 	podMap[uid] = append(podMap[uid], podSchedulableInfo{
-		spec:        pod.Spec,
-		labels:      pod.Labels,
-		schedulable: schedulable,
+		spec:            pod.Spec,
+		labels:          pod.Labels,
+		schedulingError: err,
 	})
 }
 
@@ -112,34 +112,39 @@ func (podMap podSchedulableMap) set(pod *apiv1.Pod, schedulable bool) {
 // It takes into account pods that are bound to node and will be scheduled after lower priority pod preemption.
 func FilterOutSchedulable(unschedulableCandidates []*apiv1.Pod, nodes []*apiv1.Node, allScheduled []*apiv1.Pod, podsWaitingForLowerPriorityPreemption []*apiv1.Pod,
 	predicateChecker *simulator.PredicateChecker, expendablePodsPriorityCutoff int) []*apiv1.Pod {
-
 	unschedulablePods := []*apiv1.Pod{}
 	nonExpendableScheduled := FilterOutExpendablePods(allScheduled, expendablePodsPriorityCutoff)
 	nodeNameToNodeInfo := scheduler_util.CreateNodeNameToInfoMap(append(nonExpendableScheduled, podsWaitingForLowerPriorityPreemption...), nodes)
 	podSchedulable := make(podSchedulableMap)
-
 	loggingQuota := glogx.PodsLoggingQuota()
 
 	for _, pod := range unschedulableCandidates {
-		if schedulable, found := podSchedulable.get(pod); found {
-			if !schedulable {
+		cachedError, found := podSchedulable.get(pod)
+		// Try to get result from cache.
+		if found {
+			if cachedError != nil {
 				unschedulablePods = append(unschedulablePods, pod)
 			} else {
 				glogx.V(4).UpTo(loggingQuota).Infof("Pod %s marked as unschedulable can be scheduled (based on simulation run for other pod owned by the same controller). Ignoring in scale up.", pod.Name)
 			}
 			continue
 		}
-		if nodeName, err := predicateChecker.FitsAny(pod, nodeNameToNodeInfo); err == nil {
-			glogx.V(4).UpTo(loggingQuota).Infof("Pod %s marked as unschedulable can be scheduled on %s. Ignoring in scale up.", pod.Name, nodeName)
-			podSchedulable.set(pod, true)
-		} else {
+
+		// Not found in cache, have to run the predicates.
+		nodeName, err := predicateChecker.FitsAny(pod, nodeNameToNodeInfo)
+		// err returned from FitsAny isn't a PredicateError.
+		// Hello, ugly hack. I wish you weren't here.
+		var predicateError *simulator.PredicateError
+		if err != nil {
+			predicateError = simulator.NewPredicateError("FitsAny", err, nil)
 			unschedulablePods = append(unschedulablePods, pod)
-			podSchedulable.set(pod, false)
+		} else {
+			glogx.V(4).UpTo(loggingQuota).Infof("Pod %s marked as unschedulable can be scheduled on %s. Ignoring in scale up.", pod.Name, nodeName)
 		}
+		podSchedulable.set(pod, predicateError)
 	}
 
 	glogx.V(4).Over(loggingQuota).Infof("%v other pods marked as unschedulable can be scheduled.", -loggingQuota.Left())
-
 	return unschedulablePods
 }
 
@@ -171,6 +176,42 @@ func FilterOutExpendablePods(pods []*apiv1.Pod, expendablePodsPriorityCutoff int
 		}
 	}
 	return result
+}
+
+// CheckPodsSchedulableOnNode checks if pods can be scheduled on the given node.
+func CheckPodsSchedulableOnNode(context *context.AutoscalingContext, pods []*apiv1.Pod, nodeGroupId string, nodeInfo *schedulercache.NodeInfo) map[*apiv1.Pod]*simulator.PredicateError {
+	schedulingErrors := map[*apiv1.Pod]*simulator.PredicateError{}
+	loggingQuota := glogx.PodsLoggingQuota()
+	podSchedulable := make(podSchedulableMap)
+
+	for _, pod := range pods {
+		// Check if pod isn't repeated before overwriting result for it.
+		if _, repeated := schedulingErrors[pod]; repeated {
+			// This shouldn't really happen.
+			glog.Warningf("Pod %v appears multiple time on pods list, will only count it once in scale-up simulation", pod)
+		}
+		// Try to get result from cache.
+		err, found := podSchedulable.get(pod)
+		if found {
+			schedulingErrors[pod] = err
+			if err != nil {
+				glogx.V(2).UpTo(loggingQuota).Infof("Pod %s can't be scheduled on %s. Used cached predicate check results", pod.Name, nodeGroupId)
+			}
+		}
+		// Not found in cache, have to run the predicates.
+		if !found {
+			err = context.PredicateChecker.CheckPredicates(pod, nil, nodeInfo)
+			podSchedulable.set(pod, err)
+			schedulingErrors[pod] = err
+			if err != nil {
+				// Always log for the first pod in a controller.
+				glog.V(2).Infof("Pod %s can't be scheduled on %s, predicate failed: %v", pod.Name, nodeGroupId, err.VerboseError())
+			}
+		}
+	}
+
+	glogx.V(2).Over(loggingQuota).Infof("%v other pods can't be scheduled on %s.", -loggingQuota.Left(), nodeGroupId)
+	return schedulingErrors
 }
 
 // GetNodeInfosForGroups finds NodeInfos for all node groups used to manage the given nodes. It also returns a node group to sample node mapping.
@@ -268,6 +309,23 @@ func GetNodeInfosForGroups(nodes []*apiv1.Node, cloudProvider cloudprovider.Clou
 	return result, nil
 }
 
+// FilterOutNodesFromNotAutoscaledGroups return subset of input nodes for which cloud provider does not
+// return autoscaled node group.
+func FilterOutNodesFromNotAutoscaledGroups(nodes []*apiv1.Node, cloudProvider cloudprovider.CloudProvider) ([]*apiv1.Node, errors.AutoscalerError) {
+	result := make([]*apiv1.Node, 0)
+
+	for _, node := range nodes {
+		nodeGroup, err := cloudProvider.NodeGroupForNode(node)
+		if err != nil {
+			return []*apiv1.Node{}, errors.ToAutoscalerError(errors.CloudProviderError, err)
+		}
+		if nodeGroup == nil || reflect.ValueOf(nodeGroup).IsNil() {
+			result = append(result, node)
+		}
+	}
+	return result, nil
+}
+
 func sanitizeNodeInfo(nodeInfo *schedulercache.NodeInfo, nodeGroupName string) (*schedulercache.NodeInfo, errors.AutoscalerError) {
 	// Sanitize node name.
 	sanitizedNode, err := sanitizeTemplateNode(nodeInfo.Node(), nodeGroupName)
@@ -322,7 +380,7 @@ func sanitizeTemplateNode(node *apiv1.Node, nodeGroup string) (*apiv1.Node, erro
 }
 
 // Removes unregistered nodes if needed. Returns true if anything was removed and error if such occurred.
-func removeOldUnregisteredNodes(unregisteredNodes []clusterstate.UnregisteredNode, context *AutoscalingContext,
+func removeOldUnregisteredNodes(unregisteredNodes []clusterstate.UnregisteredNode, context *context.AutoscalingContext,
 	currentTime time.Time, logRecorder *utils.LogEventRecorder) (bool, error) {
 	removedAny := false
 	for _, unregisteredNode := range unregisteredNodes {
@@ -362,10 +420,10 @@ func removeOldUnregisteredNodes(unregisteredNodes []clusterstate.UnregisteredNod
 // Sets the target size of node groups to the current number of nodes in them
 // if the difference was constant for a prolonged time. Returns true if managed
 // to fix something.
-func fixNodeGroupSize(context *AutoscalingContext, currentTime time.Time) (bool, error) {
+func fixNodeGroupSize(context *context.AutoscalingContext, clusterStateRegistry *clusterstate.ClusterStateRegistry, currentTime time.Time) (bool, error) {
 	fixed := false
 	for _, nodeGroup := range context.CloudProvider.NodeGroups() {
-		incorrectSize := context.ClusterStateRegistry.GetIncorrectNodeGroupSize(nodeGroup.Id())
+		incorrectSize := clusterStateRegistry.GetIncorrectNodeGroupSize(nodeGroup.Id())
 		if incorrectSize == nil {
 			continue
 		}
@@ -389,7 +447,7 @@ func fixNodeGroupSize(context *AutoscalingContext, currentTime time.Time) (bool,
 // getPotentiallyUnneededNodes returns nodes that are:
 // - managed by the cluster autoscaler
 // - in groups with size > min size
-func getPotentiallyUnneededNodes(context *AutoscalingContext, nodes []*apiv1.Node) []*apiv1.Node {
+func getPotentiallyUnneededNodes(context *context.AutoscalingContext, nodes []*apiv1.Node) []*apiv1.Node {
 	result := make([]*apiv1.Node, 0, len(nodes))
 
 	nodeGroupSize := getNodeGroupSizeMap(context.CloudProvider)
@@ -457,37 +515,24 @@ func ConfigurePredicateCheckerForLoop(unschedulablePods []*apiv1.Pod, schedulabl
 	}
 }
 
-// Getting node cores/memory
-const (
-	// Megabyte is 2^20 bytes.
-	Megabyte float64 = 1024 * 1024
-)
-
-func getNodeCoresAndMemory(node *apiv1.Node) (int64, int64, error) {
-	cores, err := getNodeResource(node, apiv1.ResourceCPU)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	memory, err := getNodeResource(node, apiv1.ResourceMemory)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	if cores <= 0 || memory <= 0 {
-		return 0, 0, fmt.Errorf("Invalid node CPU/memory values - cpu %v, memory %v", cores, memory)
-	}
-
-	memoryMb := math.Ceil(float64(memory) / Megabyte)
-	return cores, int64(memoryMb), nil
+func getNodeCoresAndMemory(node *apiv1.Node) (int64, int64) {
+	cores := getNodeResource(node, apiv1.ResourceCPU)
+	memory := getNodeResource(node, apiv1.ResourceMemory)
+	return cores, memory
 }
 
-func getNodeResource(node *apiv1.Node, resource apiv1.ResourceName) (int64, error) {
+func getNodeResource(node *apiv1.Node, resource apiv1.ResourceName) int64 {
 	nodeCapacity, found := node.Status.Capacity[resource]
 	if !found {
-		return 0, fmt.Errorf("Failed to get %v for node %v", resource, node.Name)
+		return 0
 	}
-	return nodeCapacity.Value(), nil
+
+	nodeCapacityValue := nodeCapacity.Value()
+	if nodeCapacityValue < 0 {
+		nodeCapacityValue = 0
+	}
+
+	return nodeCapacityValue
 }
 
 func getNodeGroupSizeMap(cloudProvider cloudprovider.CloudProvider) map[string]int {

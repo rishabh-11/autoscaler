@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2017-12-01/compute"
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-04-01/compute"
 	"github.com/golang/glog"
 
 	apiv1 "k8s.io/api/core/v1"
@@ -32,7 +32,7 @@ import (
 	"github.com/gardener/autoscaler/cluster-autoscaler/config/dynamic"
 	"github.com/gardener/autoscaler/cluster-autoscaler/utils/gpu"
 	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
-	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
+	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 )
 
 // ScaleSet implements NodeGroup interface.
@@ -75,8 +75,8 @@ func (scaleSet *ScaleSet) Exist() bool {
 }
 
 // Create creates the node group on the cloud provider side.
-func (scaleSet *ScaleSet) Create() error {
-	return cloudprovider.ErrAlreadyExist
+func (scaleSet *ScaleSet) Create() (cloudprovider.NodeGroup, error) {
+	return nil, cloudprovider.ErrAlreadyExist
 }
 
 // Delete deletes the node group on the cloud provider side.
@@ -412,8 +412,13 @@ func (scaleSet *ScaleSet) buildNodeFromTemplate(template compute.VirtualMachineS
 
 	// NodeLabels
 	if template.Tags != nil {
-		for k, v := range *template.Tags {
-			node.Labels[k] = *v
+		for k, v := range template.Tags {
+			if v != nil {
+				node.Labels[k] = *v
+			} else {
+				node.Labels[k] = ""
+			}
+
 		}
 	}
 

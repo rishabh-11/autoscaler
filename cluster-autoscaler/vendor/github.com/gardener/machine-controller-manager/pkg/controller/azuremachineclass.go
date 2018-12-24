@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Gardener Authors.
+Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -116,7 +116,7 @@ func (c *controller) reconcileClusterAzureMachineClass(class *v1alpha1.AzureMach
 	// TODO this should be put in own API server
 	validationerr := validation.ValidateAzureMachineClass(internalClass)
 	if validationerr.ToAggregate() != nil && len(validationerr.ToAggregate().Errors()) > 0 {
-		glog.V(2).Infof("Validation of %s failed %s", AzureMachineClassKind, validationerr.ToAggregate().Error())
+		glog.Errorf("Validation of %s failed %s", AzureMachineClassKind, validationerr.ToAggregate().Error())
 		return nil
 	}
 
@@ -148,7 +148,7 @@ func (c *controller) reconcileClusterAzureMachineClass(class *v1alpha1.AzureMach
 			return nil
 		}
 
-		glog.V(4).Infof("Cannot remove finalizer of %s because still Machine[s|Sets|Deployments] are referencing it", AzureMachineClassKind, class.Name)
+		glog.V(4).Infof("Cannot remove finalizer of %s because still Machine[s|Sets|Deployments] are referencing it", class.Name)
 		return nil
 	}
 

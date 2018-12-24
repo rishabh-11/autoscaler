@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Gardener Authors.
+Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -57,6 +57,9 @@ func validateOpenStackMachineClassSpec(spec *machine.OpenStackMachineClassSpec, 
 	}
 	if "" == spec.NetworkID {
 		allErrs = append(allErrs, field.Required(fldPath.Child("networkID"), "NetworkID is required"))
+	}
+	if "" == spec.PodNetworkCidr {
+		allErrs = append(allErrs, field.Required(fldPath.Child("podNetworkCidr"), "PodNetworkCidr is required"))
 	}
 
 	allErrs = append(allErrs, validateSecretRef(spec.SecretRef, field.NewPath("spec.secretRef"))...)

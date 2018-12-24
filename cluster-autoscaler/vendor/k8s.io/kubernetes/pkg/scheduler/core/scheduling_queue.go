@@ -29,7 +29,10 @@ package core
 import (
 	"container/heap"
 	"fmt"
+	"reflect"
 	"sync"
+
+	"github.com/golang/glog"
 
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,9 +41,6 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/algorithm/predicates"
 	priorityutil "k8s.io/kubernetes/pkg/scheduler/algorithm/priorities/util"
 	"k8s.io/kubernetes/pkg/scheduler/util"
-
-	"github.com/golang/glog"
-	"reflect"
 )
 
 // SchedulingQueue is an interface for a queue to store pods waiting to be scheduled.
@@ -57,6 +57,7 @@ type SchedulingQueue interface {
 	AssignedPodAdded(pod *v1.Pod)
 	AssignedPodUpdated(pod *v1.Pod)
 	WaitingPodsForNode(nodeName string) []*v1.Pod
+	WaitingPods() []*v1.Pod
 }
 
 // NewSchedulingQueue initializes a new scheduling queue. If pod priority is
@@ -114,6 +115,15 @@ func (f *FIFO) Pop() (*v1.Pod, error) {
 		return nil
 	})
 	return result.(*v1.Pod), nil
+}
+
+// WaitingPods returns all the waiting pods in the queue.
+func (f *FIFO) WaitingPods() []*v1.Pod {
+	result := []*v1.Pod{}
+	for _, pod := range f.FIFO.List() {
+		result = append(result, pod.(*v1.Pod))
+	}
+	return result
 }
 
 // FIFO does not need to react to events, as all pods are always in the active
@@ -174,10 +184,31 @@ type PriorityQueue struct {
 // Making sure that PriorityQueue implements SchedulingQueue.
 var _ = SchedulingQueue(&PriorityQueue{})
 
+// podTimeStamp returns pod's last schedule time or its creation time if the
+// scheduler has never tried scheduling it.
+func podTimestamp(pod *v1.Pod) *metav1.Time {
+	_, condition := podutil.GetPodCondition(&pod.Status, v1.PodScheduled)
+	if condition == nil {
+		return &pod.CreationTimestamp
+	}
+	return &condition.LastTransitionTime
+}
+
+// activeQComp is the function used by the activeQ heap algorithm to sort pods.
+// It sorts pods based on their priority. When priorities are equal, it uses
+// podTimestamp.
+func activeQComp(pod1, pod2 interface{}) bool {
+	p1 := pod1.(*v1.Pod)
+	p2 := pod2.(*v1.Pod)
+	prio1 := util.GetPodPriority(p1)
+	prio2 := util.GetPodPriority(p2)
+	return (prio1 > prio2) || (prio1 == prio2 && podTimestamp(p1).Before(podTimestamp(p2)))
+}
+
 // NewPriorityQueue creates a PriorityQueue object.
 func NewPriorityQueue() *PriorityQueue {
 	pq := &PriorityQueue{
-		activeQ:        newHeap(cache.MetaNamespaceKeyFunc, util.HigherPriorityPod),
+		activeQ:        newHeap(cache.MetaNamespaceKeyFunc, activeQComp),
 		unschedulableQ: newUnschedulablePodsMap(),
 		nominatedPods:  map[string][]*v1.Pod{},
 	}
@@ -231,10 +262,10 @@ func (p *PriorityQueue) Add(pod *v1.Pod) error {
 	defer p.lock.Unlock()
 	err := p.activeQ.Add(pod)
 	if err != nil {
-		glog.Errorf("Error adding pod %v to the scheduling queue: %v", pod.Name, err)
+		glog.Errorf("Error adding pod %v/%v to the scheduling queue: %v", pod.Namespace, pod.Name, err)
 	} else {
 		if p.unschedulableQ.get(pod) != nil {
-			glog.Errorf("Error: pod %v is already in the unschedulable queue.", pod.Name)
+			glog.Errorf("Error: pod %v/%v is already in the unschedulable queue.", pod.Namespace, pod.Name)
 			p.deleteNominatedPodIfExists(pod)
 			p.unschedulableQ.delete(pod)
 		}
@@ -257,7 +288,7 @@ func (p *PriorityQueue) AddIfNotPresent(pod *v1.Pod) error {
 	}
 	err := p.activeQ.Add(pod)
 	if err != nil {
-		glog.Errorf("Error adding pod %v to the scheduling queue: %v", pod.Name, err)
+		glog.Errorf("Error adding pod %v/%v to the scheduling queue: %v", pod.Namespace, pod.Name, err)
 	} else {
 		p.addNominatedPodIfNeeded(pod)
 		p.cond.Broadcast()
@@ -400,7 +431,7 @@ func (p *PriorityQueue) MoveAllToActiveQueue() {
 	defer p.lock.Unlock()
 	for _, pod := range p.unschedulableQ.pods {
 		if err := p.activeQ.Add(pod); err != nil {
-			glog.Errorf("Error adding pod %v to the scheduling queue: %v", pod.Name, err)
+			glog.Errorf("Error adding pod %v/%v to the scheduling queue: %v", pod.Namespace, pod.Name, err)
 		}
 	}
 	p.unschedulableQ.clear()
@@ -415,7 +446,7 @@ func (p *PriorityQueue) movePodsToActiveQueue(pods []*v1.Pod) {
 		if err := p.activeQ.Add(pod); err == nil {
 			p.unschedulableQ.delete(pod)
 		} else {
-			glog.Errorf("Error adding pod %v to the scheduling queue: %v", pod.Name, err)
+			glog.Errorf("Error adding pod %v/%v to the scheduling queue: %v", pod.Namespace, pod.Name, err)
 		}
 	}
 	p.receivedMoveRequest = true
@@ -458,6 +489,21 @@ func (p *PriorityQueue) WaitingPodsForNode(nodeName string) []*v1.Pod {
 		return list
 	}
 	return nil
+}
+
+// WaitingPods returns all the waiting pods in the queue.
+func (p *PriorityQueue) WaitingPods() []*v1.Pod {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	result := []*v1.Pod{}
+	for _, pod := range p.activeQ.List() {
+		result = append(result, pod.(*v1.Pod))
+	}
+	for _, pod := range p.unschedulableQ.pods {
+		result = append(result, pod)
+	}
+	return result
 }
 
 // UnschedulablePodsMap holds pods that cannot be scheduled. This data structure

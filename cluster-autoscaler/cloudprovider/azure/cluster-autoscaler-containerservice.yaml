@@ -8,7 +8,7 @@ metadata:
   name: cluster-autoscaler
   namespace: kube-system
 ---
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: cluster-autoscaler
@@ -47,9 +47,12 @@ rules:
 - apiGroups: ["storage.k8s.io"]
   resources: ["storageclasses"]
   verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["watch","list","get"]
 
 ---
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: cluster-autoscaler
@@ -67,7 +70,7 @@ rules:
   verbs: ["delete","get","update"]
 
 ---
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: cluster-autoscaler
@@ -84,7 +87,7 @@ subjects:
     namespace: kube-system
 
 ---
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: cluster-autoscaler
@@ -110,8 +113,8 @@ data:
   SubscriptionID: <base64-encode-subscription-id>
   TenantID: <base64-encoded-tenant-id>
   VMType: QUtTCg==
-  ClusterName: `<base64-encoded-clustername>`
-  NodeResourceGroup: `<base64-encoded-node-resource-group>`
+  ClusterName: <base64-encoded-clustername>
+  NodeResourceGroup: <base64-encoded-node-resource-group>
 kind: Secret
 metadata:
   name: cluster-autoscaler-azure
@@ -185,13 +188,13 @@ spec:
               key: VMType
               name: cluster-autoscaler-azure
         - name: AZURE_CLUSTER_NAME
-           valueFrom:
-             secretKeyRef:
-               key: ClusterName
-               name: cluster-autoscaler-azure
+          valueFrom:
+            secretKeyRef:
+              key: ClusterName
+              name: cluster-autoscaler-azure
         - name: AZURE_NODE_RESOURCE_GROUP
-           valueFrom:
-             secretKeyRef:
-               key: NodeResourceGroup
-               name: cluster-autoscaler-azure
+          valueFrom:
+            secretKeyRef:
+              key: NodeResourceGroup
+              name: cluster-autoscaler-azure
       restartPolicy: Always

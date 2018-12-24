@@ -22,7 +22,7 @@ import (
 	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
 	testprovider "github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider/test"
 	. "github.com/gardener/autoscaler/cluster-autoscaler/utils/test"
-	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
+	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 
 	"github.com/stretchr/testify/assert"
 )

@@ -26,13 +26,14 @@ import (
 	"github.com/gardener/autoscaler/cluster-autoscaler/utils/errors"
 	"github.com/gardener/autoscaler/cluster-autoscaler/utils/glogx"
 	scheduler_util "github.com/gardener/autoscaler/cluster-autoscaler/utils/scheduler"
+	"github.com/gardener/autoscaler/cluster-autoscaler/utils/tpu"
 
 	apiv1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1beta1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	client "k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/scheduler/algorithm"
-	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
+	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 
 	"github.com/golang/glog"
 )
@@ -198,9 +199,9 @@ func findPlaceFor(removedNode string, pods []*apiv1.Pod, nodes []*apiv1.Node, no
 				glog.Warningf("No node in nodeInfo %s -> %v", nodename, nodeInfo)
 				return false
 			}
-			err := predicateChecker.CheckPredicates(pod, predicateMeta, nodeInfo, ReturnVerboseError)
+			err := predicateChecker.CheckPredicates(pod, predicateMeta, nodeInfo)
 			if err != nil {
-				glogx.V(4).UpTo(loggingQuota).Infof("Evaluation %s for %s/%s -> %v", nodename, pod.Namespace, pod.Name, err)
+				glogx.V(4).UpTo(loggingQuota).Infof("Evaluation %s for %s/%s -> %v", nodename, pod.Namespace, pod.Name, err.VerboseError())
 			} else {
 				// TODO(mwielgus): Optimize it.
 				glog.V(4).Infof("Pod %s/%s can be moved to %s", pod.Namespace, pod.Name, nodename)
@@ -220,6 +221,7 @@ func findPlaceFor(removedNode string, pods []*apiv1.Pod, nodes []*apiv1.Node, no
 	// layout.
 	shuffledNodes := shuffleNodes(nodes)
 
+	pods = tpu.ClearTPURequests(pods)
 	for _, podptr := range pods {
 		newpod := *podptr
 		newpod.Spec.NodeName = ""
@@ -251,7 +253,7 @@ func findPlaceFor(removedNode string, pods []*apiv1.Pod, nodes []*apiv1.Node, no
 				}
 			}
 			if !foundPlace {
-				glogx.V(4).Over(loggingQuota).Infof("% other nodes evaluated for %s/%s", -loggingQuota.Left(), pod.Namespace, pod.Name)
+				glogx.V(4).Over(loggingQuota).Infof("%v other nodes evaluated for %s/%s", -loggingQuota.Left(), pod.Namespace, pod.Name)
 				return fmt.Errorf("failed to find place for %s", podKey(pod))
 			}
 		}

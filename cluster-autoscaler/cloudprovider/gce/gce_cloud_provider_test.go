@@ -21,7 +21,6 @@ import (
 	"net/http"
 	"reflect"
 	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
@@ -38,22 +37,12 @@ type gceManagerMock struct {
 	mock.Mock
 }
 
-func (m *gceManagerMock) RegisterMig(mig *Mig) bool {
-	args := m.Called(mig)
-	return args.Bool(0)
-}
-
-func (m *gceManagerMock) UnregisterMig(toBeRemoved *Mig) bool {
-	args := m.Called(toBeRemoved)
-	return args.Bool(0)
-}
-
-func (m *gceManagerMock) GetMigSize(mig *Mig) (int64, error) {
+func (m *gceManagerMock) GetMigSize(mig Mig) (int64, error) {
 	args := m.Called(mig)
 	return args.Get(0).(int64), args.Error(1)
 }
 
-func (m *gceManagerMock) SetMigSize(mig *Mig, size int64) error {
+func (m *gceManagerMock) SetMigSize(mig Mig, size int64) error {
 	args := m.Called(mig, size)
 	return args.Error(0)
 }
@@ -63,12 +52,12 @@ func (m *gceManagerMock) DeleteInstances(instances []*GceRef) error {
 	return args.Error(0)
 }
 
-func (m *gceManagerMock) GetMigForInstance(instance *GceRef) (*Mig, error) {
+func (m *gceManagerMock) GetMigForInstance(instance *GceRef) (Mig, error) {
 	args := m.Called(instance)
-	return args.Get(0).(*Mig), args.Error(1)
+	return args.Get(0).(*gceMig), args.Error(1)
 }
 
-func (m *gceManagerMock) GetMigNodes(mig *Mig) ([]string, error) {
+func (m *gceManagerMock) GetMigNodes(mig Mig) ([]string, error) {
 	args := m.Called(mig)
 	return args.Get(0).([]string), args.Error(1)
 }
@@ -83,39 +72,9 @@ func (m *gceManagerMock) Cleanup() error {
 	return args.Error(0)
 }
 
-func (m *gceManagerMock) getMigs() []*migInformation {
+func (m *gceManagerMock) GetMigs() []*MigInformation {
 	args := m.Called()
-	return args.Get(0).([]*migInformation)
-}
-
-func (m *gceManagerMock) createNodePool(mig *Mig) error {
-	args := m.Called(mig)
-	return args.Error(0)
-}
-
-func (m *gceManagerMock) deleteNodePool(toBeRemoved *Mig) error {
-	args := m.Called(toBeRemoved)
-	return args.Error(0)
-}
-
-func (m *gceManagerMock) getLocation() string {
-	args := m.Called()
-	return args.String(0)
-}
-
-func (m *gceManagerMock) getProjectId() string {
-	args := m.Called()
-	return args.String(0)
-}
-
-func (m *gceManagerMock) getMode() GcpCloudProviderMode {
-	args := m.Called()
-	return args.Get(0).(GcpCloudProviderMode)
-}
-
-func (m *gceManagerMock) getTemplates() *templateBuilder {
-	args := m.Called()
-	return args.Get(0).(*templateBuilder)
+	return args.Get(0).([]*MigInformation)
 }
 
 func (m *gceManagerMock) GetResourceLimiter() (*cloudprovider.ResourceLimiter, error) {
@@ -126,6 +85,16 @@ func (m *gceManagerMock) GetResourceLimiter() (*cloudprovider.ResourceLimiter, e
 func (m *gceManagerMock) findMigsNamed(name *regexp.Regexp) ([]string, error) {
 	args := m.Called()
 	return args.Get(0).([]string), args.Error(1)
+}
+
+func (m *gceManagerMock) GetMigTemplateNode(mig Mig) (*apiv1.Node, error) {
+	args := m.Called(mig)
+	return args.Get(0).(*apiv1.Node), args.Error(1)
+}
+
+func (m *gceManagerMock) getCpuAndMemoryForMachineType(machineType string, zone string) (cpu int64, mem int64, err error) {
+	args := m.Called(machineType, zone)
+	return args.Get(0).(int64), args.Get(1).(int64), args.Error(2)
 }
 
 func TestBuildGceCloudProvider(t *testing.T) {
@@ -145,10 +114,10 @@ func TestNodeGroups(t *testing.T) {
 	gce := &GceCloudProvider{
 		gceManager: gceManagerMock,
 	}
-	mig := &migInformation{config: &Mig{GceRef: GceRef{Name: "ng1"}}}
-	gceManagerMock.On("getMigs").Return([]*migInformation{mig}).Once()
+	mig := &MigInformation{Config: &gceMig{gceRef: GceRef{Name: "ng1"}}}
+	gceManagerMock.On("GetMigs").Return([]*MigInformation{mig}).Once()
 	result := gce.NodeGroups()
-	assert.Equal(t, []cloudprovider.NodeGroup{mig.config}, result)
+	assert.Equal(t, []cloudprovider.NodeGroup{mig.Config}, result)
 	mock.AssertExpectationsForObjects(t, gceManagerMock)
 }
 
@@ -159,12 +128,12 @@ func TestNodeGroupForNode(t *testing.T) {
 	}
 	n := BuildTestNode("n1", 1000, 1000)
 	n.Spec.ProviderID = "gce://project1/us-central1-b/n1"
-	mig := Mig{GceRef: GceRef{Name: "ng1"}}
+	mig := gceMig{gceRef: GceRef{Name: "ng1"}}
 	gceManagerMock.On("GetMigForInstance", mock.AnythingOfType("*gce.GceRef")).Return(&mig, nil).Once()
 
 	nodeGroup, err := gce.NodeGroupForNode(n)
 	assert.NoError(t, err)
-	assert.Equal(t, mig, *reflect.ValueOf(nodeGroup).Interface().(*Mig))
+	assert.Equal(t, mig, *reflect.ValueOf(nodeGroup).Interface().(*gceMig))
 	mock.AssertExpectationsForObjects(t, gceManagerMock)
 }
 
@@ -199,21 +168,6 @@ func TestGetResourceLimiter(t *testing.T) {
 	assert.Error(t, err)
 }
 
-const getMachineTypeResponse = `{
-  "kind": "compute#machineType",
-  "id": "3001",
-  "creationTimestamp": "2015-01-16T09:25:43.314-08:00",
-  "name": "n1-standard-1",
-  "description": "1 vCPU, 3.75 GB RAM",
-  "guestCpus": 1,
-  "memoryMb": 3840,
-  "maximumPersistentDisks": 32,
-  "maximumPersistentDisksSizeGb": "65536",
-  "zone": "us-central1-a",
-  "selfLink": "https://www.googleapis.com/compute/v1/projects/krzysztof-jastrzebski-dev/zones/us-central1-a/machineTypes/n1-standard-1",
-  "isSharedCpu": false
-}`
-
 const getInstanceGroupManagerResponse = `{
   "kind": "compute#instanceGroupManager",
   "id": "3213213219",
@@ -238,100 +192,55 @@ const getInstanceGroupManagerResponse = `{
   "selfLink": "https://www.googleapis.com/compute/v1/projects/project1/zones/us-central1-b/instanceGroupManagers/gke-cluster-1-default-pool"
 }`
 
-const getInstanceTemplateResponse = `{
- "kind": "compute#instanceTemplate",
- "id": "28701103232323232",
- "creationTimestamp": "2017-09-15T04:47:21.577-07:00",
- "name": "gke-cluster-1-default-pool",
- "description": "",
- "properties": {
-  "tags": {
-   "items": [
-    "gke-cluster-1-fc0afeeb-node"
-   ]
-  },
-  "machineType": "n1-standard-1",
-  "canIpForward": true,
-  "networkInterfaces": [
-   {
-    "kind": "compute#networkInterface",
-    "network": "https://www.googleapis.com/compute/v1/projects/project1/global/networks/default",
-    "subnetwork": "https://www.googleapis.com/compute/v1/projects/project1/regions/us-central1/subnetworks/default",
-    "accessConfigs": [
-     {
-      "kind": "compute#accessConfig",
-      "type": "ONE_TO_ONE_NAT",
-      "name": "external-nat"
-     }
-    ]
-   }
-  ],
-  "disks": [
-   {
-    "kind": "compute#attachedDisk",
-    "type": "PERSISTENT",
-    "mode": "READ_WRITE",
-    "boot": true,
-    "initializeParams": {
-     "sourceImage": "https://www.googleapis.com/compute/v1/projects/gke-node-images/global/images/cos-stable-60-9592-84-0",
-     "diskSizeGb": "100",
-     "diskType": "pd-standard"
-    },
-    "autoDelete": true
-   }
-  ],
-  "metadata": {
-   "kind": "compute#metadata",
-   "fingerprint": "F7n_RsHD3ng=",
-   "items": [
-		{
-		 "key": "kube-env",
-		 "value": "ALLOCATE_NODE_CIDRS: \"true\"\n"
+var gceInstanceTemplate = &gcev1.InstanceTemplate{
+	Kind:              "compute#instanceTemplate",
+	Id:                28701103232323232,
+	CreationTimestamp: "2017-09-15T04:47:21.577-07:00",
+	Name:              "gke-cluster-1-default-pool",
+	Properties: &gcev1.InstanceProperties{
+		Tags: &gcev1.Tags{
+			Items: []string{"gke-cluster-1-000-node"},
 		},
-		{
-		 "key": "user-data",
-		 "value": "#cloud-config\n\nwrite_files:\n  - path: /etc/systemd/system/kube-node-installation.service\n    "
+		MachineType:  "n1-standard-1",
+		CanIpForward: true,
+		NetworkInterfaces: []*gcev1.NetworkInterface{
+			{
+				Kind:    "compute#networkInterface",
+				Network: "https://www.googleapis.com/compute/v1/projects/project1/global/networks/default",
+			},
 		},
-		{
-		 "key": "gci-update-strategy",
-		 "value": "update_disabled"
+		Metadata: &gcev1.Metadata{
+			Kind:        "compute#metadata",
+			Fingerprint: "F7n_RsHD3ng=",
+			Items: []*gcev1.MetadataItems{
+				{
+					Key:   "kube-env",
+					Value: createString("ALLOCATE_NODE_CIDRS: \"true\"\n"),
+				},
+				{
+					Key:   "user-data",
+					Value: createString("#cloud-config"),
+				},
+				{
+					Key:   "gci-update-strategy",
+					Value: createString("update_disabled"),
+				},
+				{
+					Key:   "gci-ensure-gke-docker",
+					Value: createString("true"),
+				},
+				{
+					Key:   "configure-sh",
+					Value: createString("#!/bin/bash\n\n<#"),
+				},
+				{
+					Key:   "cluster-name",
+					Value: createString("cluster-1"),
+				},
+			},
 		},
-		{
-		 "key": "gci-ensure-gke-docker",
-		 "value": "true"
-		},
-		{
-		 "key": "configure-sh",
-		 "value": "#!/bin/bash\n\n# Copyright 2016 The Kubernetes Authors.\n#\n# Licensed under the Apache License, "
-		},
-		{
-		 "key": "cluster-name",
-		 "value": "cluster-1"
-		}
-	   ]
-	  },
-  "serviceAccounts": [
-   {
-    "email": "default",
-    "scopes": [
-     "https://www.googleapis.com/auth/compute",
-     "https://www.googleapis.com/auth/devstorage.read_only",
-     "https://www.googleapis.com/auth/logging.write",
-     "https://www.googleapis.com/auth/monitoring.write",
-     "https://www.googleapis.com/auth/servicecontrol",
-     "https://www.googleapis.com/auth/service.management.readonly",
-     "https://www.googleapis.com/auth/trace.append"
-    ]
-   }
-  ],
-  "scheduling": {
-   "onHostMaintenance": "MIGRATE",
-   "automaticRestart": true,
-   "preemptible": false
-  }
- },
- "selfLink": "https://www.googleapis.com/compute/v1/projects/project1/global/instanceTemplates/gke-cluster-1-default-pool-f7607aac"
-}`
+	},
+}
 
 func TestMig(t *testing.T) {
 	server := NewHttpServerMock()
@@ -341,37 +250,23 @@ func TestMig(t *testing.T) {
 	gceService, err := gcev1.New(client)
 	assert.NoError(t, err)
 	gceService.BasePath = server.URL
-	templateBuilder := &templateBuilder{gceService, "project1"}
-	gce := &GceCloudProvider{
+
+	mig1 := &gceMig{
 		gceManager: gceManagerMock,
+		minSize:    0,
+		maxSize:    1000,
 	}
 
-	// Test NewNodeGroup.
-	gceManagerMock.On("getProjectId").Return("project1").Once()
-	gceManagerMock.On("getLocation").Return("us-central1-b").Once()
-	gceManagerMock.On("getTemplates").Return(templateBuilder).Once()
-	server.On("handle", "/project1/zones/us-central1-b/machineTypes/n1-standard-1").Return(getMachineTypeResponse).Once()
-	nodeGroup, err := gce.NewNodeGroup("n1-standard-1", nil, nil, nil)
-	assert.NoError(t, err)
-	assert.NotNil(t, nodeGroup)
-	mig1 := reflect.ValueOf(nodeGroup).Interface().(*Mig)
-	mig1.exist = true
-	assert.True(t, strings.HasPrefix(mig1.Id(), "https://content.googleapis.com/compute/v1/projects/project1/zones/us-central1-b/instanceGroups/"+nodeAutoprovisioningPrefix+"-n1-standard-1"))
-	assert.Equal(t, true, mig1.Autoprovisioned())
-	assert.Equal(t, 0, mig1.MinSize())
-	assert.Equal(t, 1000, mig1.MaxSize())
-	mock.AssertExpectationsForObjects(t, gceManagerMock)
-
 	// Test TargetSize.
-	gceManagerMock.On("GetMigSize", mock.AnythingOfType("*gce.Mig")).Return(int64(2), nil).Once()
+	gceManagerMock.On("GetMigSize", mock.AnythingOfType("*gce.gceMig")).Return(int64(2), nil).Once()
 	targetSize, err := mig1.TargetSize()
 	assert.NoError(t, err)
 	assert.Equal(t, 2, targetSize)
 	mock.AssertExpectationsForObjects(t, gceManagerMock)
 
 	// Test IncreaseSize.
-	gceManagerMock.On("GetMigSize", mock.AnythingOfType("*gce.Mig")).Return(int64(2), nil).Once()
-	gceManagerMock.On("SetMigSize", mock.AnythingOfType("*gce.Mig"), int64(3)).Return(nil).Once()
+	gceManagerMock.On("GetMigSize", mock.AnythingOfType("*gce.gceMig")).Return(int64(2), nil).Once()
+	gceManagerMock.On("SetMigSize", mock.AnythingOfType("*gce.gceMig"), int64(3)).Return(nil).Once()
 	err = mig1.IncreaseSize(1)
 	assert.NoError(t, err)
 	mock.AssertExpectationsForObjects(t, gceManagerMock)
@@ -382,18 +277,18 @@ func TestMig(t *testing.T) {
 	assert.Equal(t, "size increase must be positive", err.Error())
 
 	// Test IncreaseSize - fail on too big delta.
-	gceManagerMock.On("GetMigSize", mock.AnythingOfType("*gce.Mig")).Return(int64(2), nil).Once()
+	gceManagerMock.On("GetMigSize", mock.AnythingOfType("*gce.gceMig")).Return(int64(2), nil).Once()
 	err = mig1.IncreaseSize(1000)
 	assert.Error(t, err)
 	assert.Equal(t, "size increase too large - desired:1002 max:1000", err.Error())
 	mock.AssertExpectationsForObjects(t, gceManagerMock)
 
 	// Test DecreaseTargetSize.
-	gceManagerMock.On("GetMigSize", mock.AnythingOfType("*gce.Mig")).Return(int64(3), nil).Once()
-	gceManagerMock.On("GetMigNodes", mock.AnythingOfType("*gce.Mig")).Return(
+	gceManagerMock.On("GetMigSize", mock.AnythingOfType("*gce.gceMig")).Return(int64(3), nil).Once()
+	gceManagerMock.On("GetMigNodes", mock.AnythingOfType("*gce.gceMig")).Return(
 		[]string{"gce://project1/us-central1-b/gke-cluster-1-default-pool-f7607aac-9j4g",
 			"gce://project1/us-central1-b/gke-cluster-1-default-pool-f7607aac-dck1"}, nil).Once()
-	gceManagerMock.On("SetMigSize", mock.AnythingOfType("*gce.Mig"), int64(2)).Return(nil).Once()
+	gceManagerMock.On("SetMigSize", mock.AnythingOfType("*gce.gceMig"), int64(2)).Return(nil).Once()
 	err = mig1.DecreaseTargetSize(-1)
 	assert.NoError(t, err)
 	mock.AssertExpectationsForObjects(t, gceManagerMock)
@@ -404,8 +299,8 @@ func TestMig(t *testing.T) {
 	assert.Equal(t, "size decrease must be negative", err.Error())
 
 	// Test DecreaseTargetSize - fail on deleting existing nodes.
-	gceManagerMock.On("GetMigSize", mock.AnythingOfType("*gce.Mig")).Return(int64(3), nil).Once()
-	gceManagerMock.On("GetMigNodes", mock.AnythingOfType("*gce.Mig")).Return(
+	gceManagerMock.On("GetMigSize", mock.AnythingOfType("*gce.gceMig")).Return(int64(3), nil).Once()
+	gceManagerMock.On("GetMigNodes", mock.AnythingOfType("*gce.gceMig")).Return(
 		[]string{"gce://project1/us-central1-b/gke-cluster-1-default-pool-f7607aac-9j4g",
 			"gce://project1/us-central1-b/gke-cluster-1-default-pool-f7607aac-dck1"}, nil).Once()
 
@@ -425,19 +320,16 @@ func TestMig(t *testing.T) {
 	mock.AssertExpectationsForObjects(t, gceManagerMock)
 
 	// Test Belongs - false.
-	mig2 := &Mig{
-		GceRef: GceRef{
+	mig2 := &gceMig{
+		gceRef: GceRef{
 			Project: "project1",
 			Zone:    "us-central1-b",
 			Name:    "default-pool",
 		},
-		gceManager:      gceManagerMock,
-		minSize:         0,
-		maxSize:         1000,
-		autoprovisioned: true,
-		exist:           true,
-		nodePoolName:    "default-pool",
-		spec:            nil}
+		gceManager: gceManagerMock,
+		minSize:    0,
+		maxSize:    1000,
+	}
 	gceManagerMock.On("GetMigForInstance", mock.AnythingOfType("*gce.GceRef")).Return(mig2, nil).Once()
 
 	belongs, err = mig1.Belongs(node)
@@ -452,7 +344,7 @@ func TestMig(t *testing.T) {
 	n2 := BuildTestNode("gke-cluster-1-default-pool-f7607aac-dck1", 1000, 1000)
 	n2.Spec.ProviderID = "gce://project1/us-central1-b/gke-cluster-1-default-pool-f7607aac-dck1"
 	n2ref := &GceRef{"project1", "us-central1-b", "gke-cluster-1-default-pool-f7607aac-dck1"}
-	gceManagerMock.On("GetMigSize", mock.AnythingOfType("*gce.Mig")).Return(int64(2), nil).Once()
+	gceManagerMock.On("GetMigSize", mock.AnythingOfType("*gce.gceMig")).Return(int64(2), nil).Once()
 	gceManagerMock.On("GetMigForInstance", n1ref).Return(mig1, nil).Once()
 	gceManagerMock.On("GetMigForInstance", n2ref).Return(mig1, nil).Once()
 	gceManagerMock.On("DeleteInstances", []*GceRef{n1ref, n2ref}).Return(nil).Once()
@@ -461,14 +353,14 @@ func TestMig(t *testing.T) {
 	mock.AssertExpectationsForObjects(t, gceManagerMock)
 
 	// Test DeleteNodes - fail on reaching min size.
-	gceManagerMock.On("GetMigSize", mock.AnythingOfType("*gce.Mig")).Return(int64(0), nil).Once()
+	gceManagerMock.On("GetMigSize", mock.AnythingOfType("*gce.gceMig")).Return(int64(0), nil).Once()
 	err = mig1.DeleteNodes([]*apiv1.Node{n1, n2})
 	assert.Error(t, err)
 	assert.Equal(t, "min size reached, nodes will not be deleted", err.Error())
 	mock.AssertExpectationsForObjects(t, gceManagerMock)
 
 	// Test Nodes.
-	gceManagerMock.On("GetMigNodes", mock.AnythingOfType("*gce.Mig")).Return(
+	gceManagerMock.On("GetMigNodes", mock.AnythingOfType("*gce.gceMig")).Return(
 		[]string{"gce://project1/us-central1-b/gke-cluster-1-default-pool-f7607aac-9j4g",
 			"gce://project1/us-central1-b/gke-cluster-1-default-pool-f7607aac-dck1"}, nil).Once()
 	nodes, err := mig1.Nodes()
@@ -477,36 +369,9 @@ func TestMig(t *testing.T) {
 	assert.Equal(t, "gce://project1/us-central1-b/gke-cluster-1-default-pool-f7607aac-dck1", nodes[1])
 	mock.AssertExpectationsForObjects(t, gceManagerMock)
 
-	// Test Create.
-	mig1.exist = false
-	gceManagerMock.On("createNodePool", mock.AnythingOfType("*gce.Mig")).Return(nil).Once()
-	err = mig1.Create()
-	assert.NoError(t, err)
-	mock.AssertExpectationsForObjects(t, gceManagerMock)
-
-	// Test Delete.
-	mig1.exist = true
-	gceManagerMock.On("deleteNodePool", mock.AnythingOfType("*gce.Mig")).Return(nil).Once()
-	err = mig1.Delete()
-	assert.NoError(t, err)
-	mock.AssertExpectationsForObjects(t, gceManagerMock)
-
 	// Test TemplateNodeInfo.
-	gceManagerMock.On("getTemplates").Return(templateBuilder).Times(2)
-	server.On("handle", "/project1/zones/us-central1-b/instanceGroupManagers/default-pool").Return(getInstanceGroupManagerResponse).Once()
-	server.On("handle", "/project1/global/instanceTemplates/gke-cluster-1-default-pool").Return(getInstanceTemplateResponse).Once()
-	server.On("handle", "/project1/zones/us-central1-b/machineTypes/n1-standard-1").Return(getMachineTypeResponse).Once()
+	gceManagerMock.On("GetMigTemplateNode", mock.AnythingOfType("*gce.gceMig")).Return(&apiv1.Node{}, nil).Once()
 	templateNodeInfo, err := mig2.TemplateNodeInfo()
-	assert.NoError(t, err)
-	assert.NotNil(t, templateNodeInfo)
-	assert.NotNil(t, templateNodeInfo.Node())
-	mock.AssertExpectationsForObjects(t, gceManagerMock)
-
-	// Test TemplateNodeInfo for non-existing autoprovisioned Mig.
-	gceManagerMock.On("getTemplates").Return(templateBuilder).Once()
-	server.On("handle", "/project1/zones/us-central1-b/machineTypes/n1-standard-1").Return(getMachineTypeResponse).Once()
-	mig1.exist = false
-	templateNodeInfo, err = mig1.TemplateNodeInfo()
 	assert.NoError(t, err)
 	assert.NotNil(t, templateNodeInfo)
 	assert.NotNil(t, templateNodeInfo.Node())
@@ -517,4 +382,8 @@ func TestGceRefFromProviderId(t *testing.T) {
 	ref, err := GceRefFromProviderId("gce://project1/us-central1-b/name1")
 	assert.NoError(t, err)
 	assert.Equal(t, GceRef{"project1", "us-central1-b", "name1"}, *ref)
+}
+
+func createString(s string) *string {
+	return &s
 }

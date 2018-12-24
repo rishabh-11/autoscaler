@@ -23,10 +23,7 @@ import (
 	_ "k8s.io/kubernetes/pkg/credentialprovider/azure"
 	_ "k8s.io/kubernetes/pkg/credentialprovider/gcp"
 	_ "k8s.io/kubernetes/pkg/credentialprovider/rancher"
-	// Network plugins
-	"k8s.io/kubernetes/pkg/kubelet/network"
-	"k8s.io/kubernetes/pkg/kubelet/network/cni"
-	"k8s.io/kubernetes/pkg/kubelet/network/kubenet"
+	"k8s.io/utils/exec"
 	// Volume plugins
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/volume/aws_ebs"
@@ -43,6 +40,7 @@ import (
 	"k8s.io/kubernetes/pkg/volume/flocker"
 	"k8s.io/kubernetes/pkg/volume/gce_pd"
 	"k8s.io/kubernetes/pkg/volume/git_repo"
+	"k8s.io/kubernetes/pkg/volume/glusterfs"
 	"k8s.io/kubernetes/pkg/volume/host_path"
 	"k8s.io/kubernetes/pkg/volume/iscsi"
 	"k8s.io/kubernetes/pkg/volume/local"
@@ -81,6 +79,7 @@ func ProbeVolumePlugins() []volume.VolumePlugin {
 	allPlugins = append(allPlugins, nfs.ProbeVolumePlugins(volume.VolumeConfig{})...)
 	allPlugins = append(allPlugins, secret.ProbeVolumePlugins()...)
 	allPlugins = append(allPlugins, iscsi.ProbeVolumePlugins()...)
+	allPlugins = append(allPlugins, glusterfs.ProbeVolumePlugins()...)
 	allPlugins = append(allPlugins, rbd.ProbeVolumePlugins()...)
 	allPlugins = append(allPlugins, cinder.ProbeVolumePlugins()...)
 	allPlugins = append(allPlugins, quobyte.ProbeVolumePlugins()...)
@@ -107,17 +106,6 @@ func ProbeVolumePlugins() []volume.VolumePlugin {
 // GetDynamicPluginProber gets the probers of dynamically discoverable plugins
 // for kubelet.
 // Currently only Flexvolume plugins are dynamically discoverable.
-func GetDynamicPluginProber(pluginDir string) volume.DynamicPluginProber {
-	return flexvolume.GetDynamicPluginProber(pluginDir)
-}
-
-// ProbeNetworkPlugins collects all compiled-in plugins
-func ProbeNetworkPlugins(cniConfDir, cniBinDir string) []network.NetworkPlugin {
-	allPlugins := []network.NetworkPlugin{}
-
-	// for each existing plugin, add to the list
-	allPlugins = append(allPlugins, cni.ProbeNetworkPlugins(cniConfDir, cniBinDir)...)
-	allPlugins = append(allPlugins, kubenet.NewPlugin(cniBinDir))
-
-	return allPlugins
+func GetDynamicPluginProber(pluginDir string, runner exec.Interface) volume.DynamicPluginProber {
+	return flexvolume.GetDynamicPluginProber(pluginDir, runner)
 }

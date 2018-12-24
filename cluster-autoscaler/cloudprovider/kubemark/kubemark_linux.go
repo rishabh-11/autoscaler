@@ -30,7 +30,7 @@ import (
 	"github.com/gardener/autoscaler/cluster-autoscaler/config/dynamic"
 	"github.com/gardener/autoscaler/cluster-autoscaler/utils/errors"
 	"k8s.io/kubernetes/pkg/kubemark"
-	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
+	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 
 	"github.com/golang/glog"
 )
@@ -114,6 +114,7 @@ func (kubemark *KubemarkCloudProvider) GetAvailableMachineTypes() ([]string, err
 
 // NewNodeGroup builds a theoretical node group based on the node definition provided.
 func (kubemark *KubemarkCloudProvider) NewNodeGroup(machineType string, labels map[string]string, systemLabels map[string]string,
+	taints []apiv1.Taint,
 	extraResources map[string]resource.Quantity) (cloudprovider.NodeGroup, error) {
 	return nil, cloudprovider.ErrNotImplemented
 }
@@ -249,8 +250,8 @@ func (nodeGroup *NodeGroup) Exist() bool {
 }
 
 // Create creates the node group on the cloud provider side.
-func (nodeGroup *NodeGroup) Create() error {
-	return cloudprovider.ErrNotImplemented
+func (nodeGroup *NodeGroup) Create() (cloudprovider.NodeGroup, error) {
+	return nil, cloudprovider.ErrNotImplemented
 }
 
 // Delete deletes the node group on the cloud provider side.

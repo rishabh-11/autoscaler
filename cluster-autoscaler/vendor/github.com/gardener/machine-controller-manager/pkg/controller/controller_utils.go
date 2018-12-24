@@ -16,7 +16,7 @@ limitations under the License.
 This file was copied and modified from the kubernetes/kubernetes project
 https://github.com/kubernetes/kubernetes/release-1.8/pkg/controller/controller_utils.go
 
-Modifications Copyright 2017 The Gardener Authors.
+Modifications Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 // Package controller is used to provide the core functionalities of machine-controller-manager
@@ -70,7 +70,7 @@ const (
 	// latency/machine at the scale of 3000 machines over 100 nodes.
 	ExpectationsTimeout = 5 * time.Minute
 	// SlowStartInitialBatchSize - When batching machine creates, is the size of the
-	// inital batch.  The size of each successive batch is twice the size of
+	// initial batch.  The size of each successive batch is twice the size of
 	// the previous batch.  For example, for a value of 1, batch sizes would be
 	// 1, 2, 4, 8, ...  and for a value of 10, batch sizes would be
 	// 10, 20, 40, 80, ...  Setting the value higher means that quota denials
@@ -172,7 +172,7 @@ func (r *ContExpectations) GetExpectations(controllerKey string) (*ControlleeExp
 func (r *ContExpectations) DeleteExpectations(controllerKey string) {
 	if exp, exists, err := r.GetByKey(controllerKey); err == nil && exists {
 		if err := r.Delete(exp); err != nil {
-			glog.V(2).Infof("Error deleting expectations for controller %v: %v", controllerKey, err)
+			glog.V(4).Infof("Error deleting expectations for controller %v: %v", controllerKey, err)
 		}
 	}
 }

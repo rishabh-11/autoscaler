@@ -20,7 +20,7 @@ import (
 	"math/rand"
 
 	"github.com/gardener/autoscaler/cluster-autoscaler/expander"
-	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
+	schedulercache "k8s.io/kubernetes/pkg/scheduler/cache"
 )
 
 type random struct {

@@ -20,18 +20,26 @@ import (
 	"time"
 
 	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
-	"github.com/gardener/autoscaler/cluster-autoscaler/config/dynamic"
+	cloudBuilder "github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider/builder"
+	"github.com/gardener/autoscaler/cluster-autoscaler/config"
+	"github.com/gardener/autoscaler/cluster-autoscaler/context"
+	"github.com/gardener/autoscaler/cluster-autoscaler/expander"
+	"github.com/gardener/autoscaler/cluster-autoscaler/expander/factory"
+	ca_processors "github.com/gardener/autoscaler/cluster-autoscaler/processors"
 	"github.com/gardener/autoscaler/cluster-autoscaler/simulator"
 	"github.com/gardener/autoscaler/cluster-autoscaler/utils/errors"
-	kube_util "github.com/gardener/autoscaler/cluster-autoscaler/utils/kubernetes"
 	kube_client "k8s.io/client-go/kubernetes"
-	kube_record "k8s.io/client-go/tools/record"
 )
 
 // AutoscalerOptions is the whole set of options for configuring an autoscaler
 type AutoscalerOptions struct {
-	AutoscalingOptions
-	dynamic.ConfigFetcherOptions
+	config.AutoscalingOptions
+	KubeClient             kube_client.Interface
+	AutoscalingKubeClients *context.AutoscalingKubeClients
+	CloudProvider          cloudprovider.CloudProvider
+	PredicateChecker       *simulator.PredicateChecker
+	ExpanderStrategy       expander.Strategy
+	Processors             *ca_processors.AutoscalingProcessors
 }
 
 // Autoscaler is the main component of CA which scales up/down node groups according to its configuration
@@ -39,22 +47,46 @@ type AutoscalerOptions struct {
 type Autoscaler interface {
 	// RunOnce represents an iteration in the control-loop of CA
 	RunOnce(currentTime time.Time) errors.AutoscalerError
-	// CleanUp represents a clean-up required before the first invocation of RunOnce
-	CleanUp()
-	// CloudProvider returns the cloud provider associated to this autoscaler
-	CloudProvider() cloudprovider.CloudProvider
 	// ExitCleanUp is a clean-up performed just before process termination.
 	ExitCleanUp()
 }
 
 // NewAutoscaler creates an autoscaler of an appropriate type according to the parameters
-func NewAutoscaler(opts AutoscalerOptions, predicateChecker *simulator.PredicateChecker, kubeClient kube_client.Interface,
-	kubeEventRecorder kube_record.EventRecorder, listerRegistry kube_util.ListerRegistry) (Autoscaler, errors.AutoscalerError) {
-
-	autoscalerBuilder := NewAutoscalerBuilder(opts.AutoscalingOptions, predicateChecker, kubeClient, kubeEventRecorder, listerRegistry)
-	if opts.ConfigMapName != "" {
-		configFetcher := dynamic.NewConfigFetcher(opts.ConfigFetcherOptions, kubeClient, kubeEventRecorder)
-		return NewDynamicAutoscaler(autoscalerBuilder, configFetcher)
+func NewAutoscaler(opts AutoscalerOptions) (Autoscaler, errors.AutoscalerError) {
+	err := initializeDefaultOptions(&opts)
+	if err != nil {
+		return nil, errors.ToAutoscalerError(errors.InternalError, err)
 	}
-	return autoscalerBuilder.Build()
+	return NewStaticAutoscaler(opts.AutoscalingOptions, opts.PredicateChecker, opts.AutoscalingKubeClients, opts.Processors, opts.CloudProvider, opts.ExpanderStrategy), nil
+}
+
+// Initialize default options if not provided.
+func initializeDefaultOptions(opts *AutoscalerOptions) error {
+	if opts.Processors == nil {
+		opts.Processors = ca_processors.DefaultProcessors()
+	}
+	if opts.AutoscalingKubeClients == nil {
+		opts.AutoscalingKubeClients = context.NewAutoscalingKubeClients(opts.AutoscalingOptions, opts.KubeClient)
+	}
+	if opts.PredicateChecker == nil {
+		predicateCheckerStopChannel := make(chan struct{})
+		predicateChecker, err := simulator.NewPredicateChecker(opts.KubeClient, predicateCheckerStopChannel)
+		if err != nil {
+			return err
+		}
+		opts.PredicateChecker = predicateChecker
+	}
+	if opts.CloudProvider == nil {
+		opts.CloudProvider = cloudBuilder.NewCloudProvider(opts.AutoscalingOptions)
+	}
+	if opts.ExpanderStrategy == nil {
+		expanderStrategy, err := factory.ExpanderStrategyFromString(opts.ExpanderName,
+			opts.CloudProvider, opts.AutoscalingKubeClients.AllNodeLister())
+		if err != nil {
+			return err
+		}
+		opts.ExpanderStrategy = expanderStrategy
+	}
+
+	return nil
 }

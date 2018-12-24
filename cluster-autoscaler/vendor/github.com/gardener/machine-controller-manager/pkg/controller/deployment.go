@@ -16,7 +16,7 @@ limitations under the License.
 This file was copied and modified from the kubernetes/kubernetes project
 https://github.com/kubernetes/kubernetes/release-1.8/pkg/controller/deployment/deployment_controller.go
 
-Modifications Copyright 2017 The Gardener Authors.
+Modifications Copyright (c) 2017 SAP SE or an SAP affiliate company. All rights reserved.
 */
 
 // Package controller is used to provide the core functionalities of machine-controller-manager
@@ -52,7 +52,7 @@ var GroupVersionKind = "machine.sapcloud.io/v1alpha1"
 
 func (dc *controller) addMachineDeployment(obj interface{}) {
 	d := obj.(*v1alpha1.MachineDeployment)
-	glog.V(2).Infof("Adding machine deployment %s", d.Name)
+	glog.V(4).Infof("Adding machine deployment %s", d.Name)
 	dc.enqueueMachineDeployment(d)
 }
 
@@ -77,7 +77,7 @@ func (dc *controller) deleteMachineDeployment(obj interface{}) {
 			return
 		}
 	}
-	glog.V(2).Infof("Deleting machine deployment %s", d.Name)
+	glog.V(4).Infof("Deleting machine deployment %s", d.Name)
 	dc.enqueueMachineDeployment(d)
 }
 
@@ -268,10 +268,7 @@ func (dc *controller) enqueueMachineDeployment(deployment *v1alpha1.MachineDeplo
 		return
 	}
 
-	glog.V(4).Infof("Enqueuing %s", key)
-	glog.V(4).Infof("len: %d", dc.machineDeploymentQueue.Len())
 	dc.machineDeploymentQueue.Add(key)
-	glog.V(4).Infof("len: %d", dc.machineDeploymentQueue.Len())
 }
 
 func (dc *controller) enqueueRateLimited(deployment *v1alpha1.MachineDeployment) {
@@ -284,8 +281,8 @@ func (dc *controller) enqueueRateLimited(deployment *v1alpha1.MachineDeployment)
 	dc.machineDeploymentQueue.AddRateLimited(key)
 }
 
-// enqueueAfter will enqueue a deployment after the provided amount of time.
-func (dc *controller) enqueueAfter(deployment *v1alpha1.MachineDeployment, after time.Duration) {
+//  enqueueMachineDeploymentAfter will enqueue a deployment after the provided amount of time.
+func (dc *controller) enqueueMachineDeploymentAfter(deployment *v1alpha1.MachineDeployment, after time.Duration) {
 	key, err := KeyFunc(deployment)
 	if err != nil {
 		utilruntime.HandleError(fmt.Errorf("Couldn't get key for object %#v: %v", deployment, err))
@@ -430,9 +427,9 @@ func (dc *controller) getMachineMapForMachineDeployment(d *v1alpha1.MachineDeplo
 // This function is not meant to be invoked concurrently with the same key.
 func (dc *controller) reconcileClusterMachineDeployment(key string) error {
 	startTime := time.Now()
-	glog.V(4).Infof("Started syncing deployment %q (%v)", key, startTime)
+	glog.V(3).Infof("Started syncing deployment %q (%v)", key, startTime)
 	defer func() {
-		glog.V(4).Infof("Finished syncing deployment %q (%v)", key, time.Since(startTime))
+		glog.V(3).Infof("Finished syncing deployment %q (%v)", key, time.Since(startTime))
 	}()
 
 	_, name, err := cache.SplitMetaNamespaceKey(key)
@@ -441,7 +438,7 @@ func (dc *controller) reconcileClusterMachineDeployment(key string) error {
 	}
 	deployment, err := dc.controlMachineClient.MachineDeployments(dc.namespace).Get(name, metav1.GetOptions{})
 	if errors.IsNotFound(err) {
-		glog.V(2).Infof("Deployment %v has been deleted", key)
+		glog.V(4).Infof("Deployment %v has been deleted", key)
 		return nil
 	}
 	if err != nil {
@@ -450,8 +447,7 @@ func (dc *controller) reconcileClusterMachineDeployment(key string) error {
 
 	// If MachineDeployment is frozen and no deletion timestamp, don't process it
 	if deployment.Labels["freeze"] == "True" && deployment.DeletionTimestamp == nil {
-		glog.V(3).Infof("MachineDeployment %q is frozen, and hence not processeing", deployment.Name)
-		return nil
+		glog.V(3).Infof("MachineDeployment %q is frozen. However, it will still be processed if it there is an scale down event.", deployment.Name)
 	}
 
 	// Validate MachineDeployment
@@ -464,7 +460,7 @@ func (dc *controller) reconcileClusterMachineDeployment(key string) error {
 
 	validationerr := validation.ValidateMachineDeployment(internalMachineDeployment)
 	if validationerr.ToAggregate() != nil && len(validationerr.ToAggregate().Errors()) > 0 {
-		glog.V(2).Infof("Validation of MachineDeployment failled %s", validationerr.ToAggregate().Error())
+		glog.Errorf("Validation of MachineDeployment failled %s", validationerr.ToAggregate().Error())
 		return nil
 	}
 
@@ -473,6 +469,9 @@ func (dc *controller) reconcileClusterMachineDeployment(key string) error {
 	if err != nil || secretRef == nil {
 		return err
 	}
+
+	// Resync the MachineDeployment after 10 minutes to avoid missing out on missed out events
+	defer dc.enqueueMachineDeploymentAfter(deployment, 10*time.Minute)
 
 	// Deep-copy otherwise we are mutating our cache.
 	// TODO: Deep-copy only when needed.
