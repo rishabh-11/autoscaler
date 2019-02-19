@@ -121,11 +121,32 @@ func (m *McmManager) GetMachineDeploymentForMachine(machine *Ref) (*MachineDeplo
 		//Considering the possibility when Machine has been deleted but due to cached Node object it appears here.
 		return nil, fmt.Errorf("Node does not Exists")
 	}
-	machStr := strings.Split(machine.Name, "-")
-	machName := strings.Join(machStr[:len(machStr)-2], "-")
+	machineObject, err := m.machineclient.Machines(m.namespace).Get(machine.Name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("Unable to fetch Machine object %s %+v", machine.Name, err)
+	}
+
+	var machineSetName, machineDeploymentName string
+	if len(machineObject.OwnerReferences) > 0 {
+		machineSetName = machineObject.OwnerReferences[0].Name
+	} else {
+		return nil, fmt.Errorf("Unable to find parent MachineSet of given Machine object %s %+v", machine.Name, err)
+	}
+
+	machineSetObject, err := m.machineclient.MachineSets(m.namespace).Get(machineSetName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("Unable to fetch MachineSet object %s %+v", machineSetName, err)
+	}
+
+	if len(machineSetObject.OwnerReferences) > 0 {
+		machineDeploymentName = machineSetObject.OwnerReferences[0].Name
+	} else {
+		return nil, fmt.Errorf("Unable to find parent MachineDeployment of given MachineSet object %s %+v", machineSetName, err)
+	}
+
 	mcmRef := Ref{
-		Name:      machName,
-		Namespace: machine.Namespace,
+		Name:      machineDeploymentName,
+		Namespace: m.namespace,
 	}
 
 	discoveryOpts := m.discoveryOpts
@@ -140,7 +161,7 @@ func (m *McmManager) GetMachineDeploymentForMachine(machine *Ref) (*MachineDeplo
 		str := strings.Split(s.Name, ".")
 		_, Name := str[0], str[1]
 
-		if Name == machName {
+		if Name == machineDeploymentName {
 			min = s.MinSize
 			max = s.MaxSize
 			break
