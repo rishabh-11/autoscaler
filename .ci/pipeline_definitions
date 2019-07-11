@@ -27,7 +27,7 @@ autoscaler:
       build:
         image: 'eu.gcr.io/gardener-project/gardener/autoscaler/autoscaling-builder:0.2'
         output_dir: 'binary'
-  variants:
+  jobs:
     head-update: ~
     pull-request:
       traits:
