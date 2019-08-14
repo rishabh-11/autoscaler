@@ -24,13 +24,12 @@ import (
 )
 
 // WARNING!
-// IF YOU MODIFY ANY OF THE TYPES HERE COPY THEM TO ../types.go
+// IF YOU MODIFY ANY OF THE TYPES HERE COPY THEM TO ./v1alpha1/types.go
 // AND RUN  ./hack/generate-code
 
 /********************** Machine APIs ***************/
 
 // +genclient
-// +genclient:noStatus
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // Machine TODO
@@ -72,6 +71,18 @@ type MachineSpec struct {
 	// ProviderID represents the provider's unique ID given to a machine
 	// +optional
 	ProviderID string
+
+	// +optional
+	NodeTemplateSpec NodeTemplateSpec
+}
+
+// NodeTemplateSpec describes the data a node should have when created from a template
+type NodeTemplateSpec struct {
+	// +optional
+	metav1.ObjectMeta
+
+	// +optional
+	Spec corev1.NodeSpec
 }
 
 // MachineTemplateSpec describes the data a machine should have when created from a template
@@ -1175,4 +1186,51 @@ type AlicloudMachineClassSpec struct {
 type AlicloudSystemDisk struct {
 	Category string
 	Size     int
+}
+
+/********************** PacketMachineClass APIs ***************/
+
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// PacketMachineClass TODO
+type PacketMachineClass struct {
+	// +optional
+	metav1.ObjectMeta
+
+	// +optional
+	metav1.TypeMeta
+
+	// +optional
+	Spec PacketMachineClassSpec
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// PacketMachineClassList is a collection of PacketMachineClasses.
+type PacketMachineClassList struct {
+	// +optional
+	metav1.TypeMeta
+
+	// +optional
+	metav1.ListMeta
+
+	// +optional
+	Items []PacketMachineClass
+}
+
+// PacketMachineClassSpec is the specification of a cluster.
+type PacketMachineClassSpec struct {
+	Facility     []string // required
+	MachineType  string   // required
+	OS           string   // required
+	ProjectID    string   // required
+	BillingCycle string
+	Tags         []string
+	SSHKeys      []string
+	UserData     string
+
+	SecretRef *corev1.SecretReference
+
+	// TODO add more here
 }
