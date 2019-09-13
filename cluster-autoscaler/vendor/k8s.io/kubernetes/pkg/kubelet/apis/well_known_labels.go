@@ -17,12 +17,13 @@ limitations under the License.
 package apis
 
 const (
-	LabelHostname           = "kubernetes.io/hostname"
-	LabelZoneFailureDomain  = "failure-domain.beta.kubernetes.io/zone"
-	LabelMultiZoneDelimiter = "__"
-	LabelZoneRegion         = "failure-domain.beta.kubernetes.io/region"
-
-	LabelInstanceType = "beta.kubernetes.io/instance-type"
+	LabelHostname            = "kubernetes.io/hostname"
+	LabelZoneFailureDomain   = "failure-domain.beta.kubernetes.io/zone"
+	LabelMultiZoneDelimiter  = "__"
+	LabelZoneRegion          = "failure-domain.beta.kubernetes.io/region"
+	LabelGardenerWorkerGroup = "worker.garden.sapcloud.io/group"
+	LabelGardenerWorkerPool  = "worker.gardener.cloud/pool"
+	LabelInstanceType        = "beta.kubernetes.io/instance-type"
 
 	LabelOS   = "beta.kubernetes.io/os"
 	LabelArch = "beta.kubernetes.io/arch"

@@ -118,6 +118,12 @@ func IsNodeInfoSimilar(n1, n2 *schedulercache.NodeInfo) bool {
 			if label == kubeletapis.LabelZoneRegion {
 				continue
 			}
+			if label == kubeletapis.LabelGardenerWorkerGroup {
+				continue
+			}
+			if label == kubeletapis.LabelGardenerWorkerPool {
+				continue
+			}
 			labels[label] = append(labels[label], value)
 		}
 	}
