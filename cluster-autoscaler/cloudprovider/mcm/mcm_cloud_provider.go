@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/golang/glog"
 	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
 	"github.com/gardener/autoscaler/cluster-autoscaler/config/dynamic"
 	"github.com/gardener/autoscaler/cluster-autoscaler/utils/errors"
@@ -109,9 +110,19 @@ func (mcm *mcmCloudProvider) NodeGroups() []cloudprovider.NodeGroup {
 
 // NodeGroupForNode returns the node group for the given node.
 func (mcm *mcmCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprovider.NodeGroup, error) {
+	if len(node.Spec.ProviderID) == 0 {
+		glog.Warningf("Node %v has no providerId", node.Name)
+		return nil, nil
+	}
+    
 	ref, err := ReferenceFromProviderID(mcm.mcmManager, node.Spec.ProviderID)
 	if err != nil {
 		return nil, err
+	}
+
+	if ref == nil {
+ 		glog.Infof("Skipped node %v, not managed by this controller", node.Spec.ProviderID)
+		return nil, nil 
 	}
 
 	return mcm.mcmManager.GetMachineDeploymentForMachine(ref)
@@ -169,8 +180,10 @@ func ReferenceFromProviderID(m *McmManager, id string) (*Ref, error) {
 			break
 		}
 	}
+	
 	if Name == "" {
-		return nil, fmt.Errorf("Could not find any machine corresponds to node %+v", id)
+		// Could not find any machine corresponds to node %+v", id
+		return nil, nil 
 	}
 	return &Ref{
 		Name:      Name,
