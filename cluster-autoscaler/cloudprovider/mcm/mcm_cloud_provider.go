@@ -25,10 +25,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/golang/glog"
 	"github.com/gardener/autoscaler/cluster-autoscaler/cloudprovider"
 	"github.com/gardener/autoscaler/cluster-autoscaler/config/dynamic"
 	"github.com/gardener/autoscaler/cluster-autoscaler/utils/errors"
+	"github.com/golang/glog"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -103,6 +103,9 @@ func (mcm *mcmCloudProvider) Name() string {
 func (mcm *mcmCloudProvider) NodeGroups() []cloudprovider.NodeGroup {
 	result := make([]cloudprovider.NodeGroup, 0, len(mcm.machinedeployments))
 	for _, machinedeployment := range mcm.machinedeployments {
+		if machinedeployment.maxSize == 0 {
+			continue
+		}
 		result = append(result, machinedeployment)
 	}
 	return result
@@ -114,15 +117,15 @@ func (mcm *mcmCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprovider.N
 		glog.Warningf("Node %v has no providerId", node.Name)
 		return nil, nil
 	}
-    
+
 	ref, err := ReferenceFromProviderID(mcm.mcmManager, node.Spec.ProviderID)
 	if err != nil {
 		return nil, err
 	}
 
 	if ref == nil {
- 		glog.Infof("Skipped node %v, not managed by this controller", node.Spec.ProviderID)
-		return nil, nil 
+		glog.Infof("Skipped node %v, not managed by this controller", node.Spec.ProviderID)
+		return nil, nil
 	}
 
 	return mcm.mcmManager.GetMachineDeploymentForMachine(ref)
@@ -180,10 +183,10 @@ func ReferenceFromProviderID(m *McmManager, id string) (*Ref, error) {
 			break
 		}
 	}
-	
+
 	if Name == "" {
 		// Could not find any machine corresponds to node %+v", id
-		return nil, nil 
+		return nil, nil
 	}
 	return &Ref{
 		Name:      Name,

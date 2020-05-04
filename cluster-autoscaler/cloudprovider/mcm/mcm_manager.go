@@ -428,11 +428,11 @@ func (m *McmManager) GetMachineDeploymentNodeTemplate(machinedeployment *Machine
 		return nil, cloudprovider.ErrNotImplemented
 	}
 
-	labels := make(map[string]string) 
+	labels := make(map[string]string)
 	taints := make([]apiv1.Taint, 0)
 
 	if nodeTemplateSpec.ObjectMeta.Labels != nil {
-		labels = nodeTemplateSpec.ObjectMeta.Labels 
+		labels = nodeTemplateSpec.ObjectMeta.Labels
 	}
 	if nodeTemplateSpec.Spec.Taints != nil {
 		taints = nodeTemplateSpec.Spec.Taints
@@ -442,7 +442,7 @@ func (m *McmManager) GetMachineDeploymentNodeTemplate(machinedeployment *Machine
 		InstanceType: &instance,
 		Region:       region,
 		Zone:         "undefined", // will be implemented in MCM
-		Labels:       labels, 
+		Labels:       labels,
 		Taints:       taints,
 	}
 
