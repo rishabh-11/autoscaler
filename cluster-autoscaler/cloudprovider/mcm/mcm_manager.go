@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -393,7 +394,7 @@ func (m *McmManager) GetMachineDeploymentNodeTemplate(machinedeployment *Machine
 		return nil, fmt.Errorf("Unable to fetch MachineDeployment object %s, Error: %v", machinedeployment.Name, err)
 	}
 
-	var region string
+	var region, zone string
 	var instance instanceType
 	machineClass := md.Spec.Template.Spec.Class
 	nodeTemplateSpec := md.Spec.Template.Spec.NodeTemplateSpec
@@ -411,6 +412,9 @@ func (m *McmManager) GetMachineDeploymentNodeTemplate(machinedeployment *Machine
 			GPU:          awsInstance.GPU,
 		}
 		region = mc.Spec.Region
+		if mc.Labels != nil {
+			zone = mc.Labels["failure-domain.beta.kubernetes.io/zone"]
+		}
 	case "AzureMachineClass":
 		mc, err := m.machineclient.AzureMachineClasses(m.namespace).Get(machineClass.Name, metav1.GetOptions{})
 		if err != nil {
@@ -424,6 +428,10 @@ func (m *McmManager) GetMachineDeploymentNodeTemplate(machinedeployment *Machine
 			GPU:          azureInstance.GPU,
 		}
 		region = mc.Spec.Location
+		if mc.Spec.Properties.Zone != nil {
+			// Do not re-use the zone before re-vendoring mcm.
+			zone = mc.Spec.Location + "-" + strconv.Itoa(*mc.Spec.Properties.Zone)
+		}
 	default:
 		return nil, cloudprovider.ErrNotImplemented
 	}
@@ -441,7 +449,7 @@ func (m *McmManager) GetMachineDeploymentNodeTemplate(machinedeployment *Machine
 	nodeTmpl := &nodeTemplate{
 		InstanceType: &instance,
 		Region:       region,
-		Zone:         "undefined", // will be implemented in MCM
+		Zone:         zone, // will be implemented in MCM
 		Labels:       labels,
 		Taints:       taints,
 	}

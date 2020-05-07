@@ -946,6 +946,7 @@ type AzureVirtualMachineProperties struct {
 	OsProfile       AzureOSProfile       `json:"osProfile,omitempty"`
 	NetworkProfile  AzureNetworkProfile  `json:"networkProfile,omitempty"`
 	AvailabilitySet AzureSubResource     `json:"availabilitySet,omitempty"`
+	Zone            *int                 `json:"zone,omitempty"`
 }
 
 // AzureHardwareProfile is specifies the hardware settings for the virtual machine.
@@ -1267,14 +1268,14 @@ type PacketMachineClassList struct {
 
 // PacketMachineClassSpec is the specification of a cluster.
 type PacketMachineClassSpec struct {
-	Facility     []string           `json:"facility"`
-	MachineType  string             `json:"machineType"`
-	BillingCycle string             `json:"billingCycle"`
-	OS           string             `json:"OS"`
-	ProjectID    string             `json:"projectID"`
-	Tags         []string  `json:"tags,omitempty"`
+	Facility     []string `json:"facility"`
+	MachineType  string   `json:"machineType"`
+	BillingCycle string   `json:"billingCycle"`
+	OS           string   `json:"OS"`
+	ProjectID    string   `json:"projectID"`
+	Tags         []string `json:"tags,omitempty"`
 	SSHKeys      []string `json:"sshKeys,omitempty"`
-	UserData     string             `json:"userdata,omitempty"`
+	UserData     string   `json:"userdata,omitempty"`
 
 	SecretRef *corev1.SecretReference `json:"secretRef,omitempty"`
 }
