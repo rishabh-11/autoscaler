@@ -34,7 +34,7 @@ const (
 	MaxFreeDifferenceRatio = 0.05
 	// MaxMemoryDifferenceInKiloBytes describes how much memory
 	// capacity can differ but still be considered equal.
-	MaxMemoryDifferenceInKiloBytes = 128000
+	MaxMemoryDifferenceInKiloBytes = 256000000
 )
 
 func compareResourceMapsWithTolerance(resources map[apiv1.ResourceName][]resource.Quantity,
@@ -62,6 +62,15 @@ func IsNodeInfoSimilar(n1, n2 *schedulercache.NodeInfo) bool {
 	allocatable := make(map[apiv1.ResourceName][]resource.Quantity)
 	free := make(map[apiv1.ResourceName][]resource.Quantity)
 	nodes := []*schedulercache.NodeInfo{n1, n2}
+
+	const (
+		LabelGardenerWorkerGroup = "worker.garden.sapcloud.io/group"
+		LabelGardenerWorkerPool  = "worker.gardener.cloud/pool"
+		LabelZoneTopology        = "topology.kubernetes.io/zone"
+		LabelRegionTopology      = "topology.kubernetes.io/region"
+		LabelZoneCSIEBS          = "topology.ebs.csi.aws.com/zone"
+	)
+
 	for _, node := range nodes {
 		for res, quantity := range node.Node().Status.Capacity {
 			capacity[res] = append(capacity[res], quantity)
@@ -118,10 +127,19 @@ func IsNodeInfoSimilar(n1, n2 *schedulercache.NodeInfo) bool {
 			if label == kubeletapis.LabelZoneRegion {
 				continue
 			}
-			if label == kubeletapis.LabelGardenerWorkerGroup {
+			if label == LabelGardenerWorkerGroup {
 				continue
 			}
-			if label == kubeletapis.LabelGardenerWorkerPool {
+			if label == LabelGardenerWorkerPool {
+				continue
+			}
+			if label == LabelZoneTopology {
+				continue
+			}
+			if label == LabelRegionTopology {
+				continue
+			}
+			if label == LabelZoneCSIEBS {
 				continue
 			}
 			labels[label] = append(labels[label], value)
