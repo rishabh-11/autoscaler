@@ -1,5 +1,7 @@
 # Fork
 
+:warning: This branch is depcreated and no longer developed activily. Please refer to the current active branch - [machine-controller-manager-provider branch](https://github.com/gardener/autoscaler/tree/machine-controller-manager-provider).
+
 [![reuse compliant](https://reuse.software/badge/reuse-compliant.svg)](https://reuse.software/)
 
 This is a fork of [kubernetes/autoscaler](https://github.com/kubernetes/autoscaler) developed for the [gardener/machine-controller-manager](https://github.com/gardener/machine-controller-manager) and [gardener/gardener](https://github.com/gardener/gardener) project.   
