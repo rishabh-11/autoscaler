@@ -21,3 +21,5 @@ type MachineTemplateExpansion interface{}
 type OpenStackMachineClassExpansion interface{}
 
 type ScaleExpansion interface{}
+
+type MachineClassExpansion interface{}
