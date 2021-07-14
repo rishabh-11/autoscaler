@@ -5,7 +5,7 @@ FLAGS=
 ENVVAR=
 GOOS?=linux
 REGISTRY?=staging-k8s.gcr.io
-BASEIMAGE?=k8s.gcr.io/debian-base-amd64:0.3.2
+BASEIMAGE?=gcr.io/distroless/base:latest
 
 deps:
 	go get github.com/tools/godep

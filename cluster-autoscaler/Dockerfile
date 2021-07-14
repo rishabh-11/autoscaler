@@ -12,14 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG BASEIMAGE=k8s.gcr.io/debian-base-amd64:0.3.2
+ARG BASEIMAGE=gcr.io/distroless/base:latest
 FROM $BASEIMAGE
 LABEL maintainer="Marcin Wielgus <mwielgus@google.com>"
 
-ENV DEBIAN_FRONTEND noninteractive
-RUN clean-install ca-certificates
-
-ADD rel/cluster-autoscaler cluster-autoscaler
-ADD run.sh run.sh
-
-CMD ./run.sh
+COPY rel/cluster-autoscaler cluster-autoscaler
+CMD ["/cluster-autoscaler"]
