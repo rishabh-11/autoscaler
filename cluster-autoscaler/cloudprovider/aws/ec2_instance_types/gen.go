@@ -1,3 +1,4 @@
+//go:build ignore
 // +build ignore
 
 /*
@@ -46,6 +47,7 @@ limitations under the License.
 
 package aws
 
+// InstanceType is spec of EC2 instance
 type InstanceType struct {
 	InstanceType string
 	VCPU         int64
