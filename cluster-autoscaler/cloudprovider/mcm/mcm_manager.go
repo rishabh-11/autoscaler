@@ -110,6 +110,8 @@ var (
 	machineGVR           = schema.GroupVersionResource{Group: machineGroup, Version: machineVersion, Resource: "machines"}
 	machineSetGVR        = schema.GroupVersionResource{Group: machineGroup, Version: machineVersion, Resource: "machinesets"}
 	machineDeploymentGVR = schema.GroupVersionResource{Group: machineGroup, Version: machineVersion, Resource: "machinedeployments"}
+
+	ErrInvalidNodeTemplate = errors.New("invalid node template")
 )
 
 // McmManager manages the client communication for MachineDeployments.
@@ -684,25 +686,30 @@ func checkAndGetResourceExhaustedInstanceStatus(machine *v1alpha1.Machine) *clou
 func validateNodeTemplate(nodeTemplateAttributes *v1alpha1.NodeTemplate) error {
 	var allErrs []error
 
-	capacityAttributes := []v1.ResourceName{"cpu", "gpu", "memory"}
+	capacityAttributes := []v1.ResourceName{v1.ResourceCPU, v1.ResourceMemory, "gpu", v1.ResourceEphemeralStorage}
 
+	var atLeastOneResource bool
 	for _, attribute := range capacityAttributes {
-		if _, ok := nodeTemplateAttributes.Capacity[attribute]; !ok {
-			errMessage := fmt.Errorf("CPU, GPU and memory fields are mandatory")
-			klog.Warning(errMessage)
-			allErrs = append(allErrs, errMessage)
+		if _, ok := nodeTemplateAttributes.Capacity[attribute]; ok {
+			atLeastOneResource = true
 			break
 		}
 	}
 
+	if !atLeastOneResource {
+		errMessage := fmt.Errorf("at-least one of the resource fields %q are mandatory: %w", capacityAttributes, ErrInvalidNodeTemplate)
+		klog.Warning(errMessage)
+		allErrs = append(allErrs, errMessage)
+	}
+
 	if nodeTemplateAttributes.Region == "" || nodeTemplateAttributes.InstanceType == "" || nodeTemplateAttributes.Zone == "" {
-		errMessage := fmt.Errorf("InstanceType, Region and Zone attributes are mandatory")
+		errMessage := fmt.Errorf("InstanceType, Region and Zone attributes are mandatory: %w", ErrInvalidNodeTemplate)
 		klog.Warning(errMessage)
 		allErrs = append(allErrs, errMessage)
 	}
 
 	if allErrs != nil {
-		return fmt.Errorf("%s", allErrs)
+		return errors.Join(allErrs...)
 	}
 
 	return nil
@@ -775,9 +782,10 @@ func (m *McmManager) GetMachineDeploymentNodeTemplate(machinedeployment *Machine
 			} else {
 				klog.V(1).Infof("Generating node template only using nodeTemplate from MachineClass %s: template resources-> cpu: %s,memory: %s", machineClass.Name, nodeTemplateAttributes.Capacity.Cpu().String(), nodeTemplateAttributes.Capacity.Memory().String())
 				instance = instanceType{
-					VCPU:   nodeTemplateAttributes.Capacity[apiv1.ResourceCPU],
-					Memory: nodeTemplateAttributes.Capacity[apiv1.ResourceMemory],
-					GPU:    nodeTemplateAttributes.Capacity["gpu"],
+					VCPU:             nodeTemplateAttributes.Capacity[apiv1.ResourceCPU],
+					Memory:           nodeTemplateAttributes.Capacity[apiv1.ResourceMemory],
+					GPU:              nodeTemplateAttributes.Capacity["gpu"],
+					EphemeralStorage: nodeTemplateAttributes.Capacity[apiv1.ResourceEphemeralStorage],
 					// Numbers pods per node will depends on the CNI used and the maxPods kubelet config, default is often 110
 					PodCount: resource.MustParse("110"),
 				}

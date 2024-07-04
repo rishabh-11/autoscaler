@@ -17,6 +17,8 @@ limitations under the License.
 package mcm
 
 import (
+	"errors"
+	"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -133,4 +135,36 @@ func TestFilterNodes(t *testing.T) {
 
 	assert.EqualValues(t, len(filteredNodes), 1)
 	assert.Equal(t, filteredNodes, []*apiv1.Node{node2})
+}
+
+func TestValidateNodeTemplate(t *testing.T) {
+	awsM5Large := AWSInstanceTypes["m5.large"]
+	m5Large := &instanceType{
+		InstanceType: awsM5Large.InstanceType,
+		VCPU:         awsM5Large.VCPU,
+		Memory:       awsM5Large.Memory,
+		GPU:          awsM5Large.GPU,
+	}
+	nt := v1alpha1.NodeTemplate{
+		InstanceType: m5Large.InstanceType,
+		Capacity:     make(apiv1.ResourceList),
+	}
+	err := validateNodeTemplate(&nt)
+	assert.NotNil(t, err)
+	assert.True(t, errors.Is(err, ErrInvalidNodeTemplate))
+
+	nt.Region = "europe-west1"
+	nt.Zone = nt.Region + "-b"
+
+	err = validateNodeTemplate(&nt)
+	assert.NotNil(t, err)
+	assert.True(t, errors.Is(err, ErrInvalidNodeTemplate))
+
+	if err != nil {
+		t.Logf("error %s", err)
+	}
+
+	nt.Capacity[apiv1.ResourceEphemeralStorage] = resource.MustParse("20Gi")
+	err = validateNodeTemplate(&nt)
+	assert.Nil(t, err)
 }
