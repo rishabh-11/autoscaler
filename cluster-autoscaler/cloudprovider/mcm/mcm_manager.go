@@ -114,6 +114,7 @@ var (
 	machineSetGVR        = schema.GroupVersionResource{Group: machineGroup, Version: machineVersion, Resource: "machinesets"}
 	machineDeploymentGVR = schema.GroupVersionResource{Group: machineGroup, Version: machineVersion, Resource: "machinedeployments"}
 
+	// ErrInvalidNodeTemplate is a sentinel error that indicates that the nodeTemplate is invalid.
 	ErrInvalidNodeTemplate = errors.New("invalid node template")
 	coreResourceNames      = []v1.ResourceName{v1.ResourceCPU, v1.ResourceMemory}
 	gpuResourceNames       = []v1.ResourceName{"gpu", gpu.ResourceNvidiaGPU}
