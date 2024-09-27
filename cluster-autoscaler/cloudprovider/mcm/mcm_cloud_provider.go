@@ -287,7 +287,7 @@ func ReferenceFromProviderID(m *McmManager, id string) (*Ref, error) {
 
 	if Name == "" {
 		// Could not find any machine corresponds to node %+v", id
-		klog.V(4).Infof("No machine found for node ID %q", id)
+		klog.V(2).Infof("No machine found for node ID %q", id)
 		return nil, nil
 	}
 	return &Ref{

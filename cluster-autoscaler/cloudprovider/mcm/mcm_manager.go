@@ -441,6 +441,7 @@ func (m *McmManager) SetMachineDeploymentSize(ctx context.Context, machinedeploy
 // DeleteMachines deletes the Machines and also reduces the desired replicas of the MachineDeployment in parallel.
 func (m *McmManager) DeleteMachines(targetMachineRefs []*Ref) error {
 	if len(targetMachineRefs) == 0 {
+		klog.V(2).Infof("[DeleteMachines] No machines to delete")
 		return nil
 	}
 	commonMachineDeployment, err := m.GetMachineDeploymentForMachine(targetMachineRefs[0])
