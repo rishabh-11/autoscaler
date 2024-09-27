@@ -75,14 +75,6 @@ azureClientID: ""
 # Required if `cloudProvider=azure`
 azureClientSecret: ""
 
-# azureClusterName -- Azure AKS cluster name.
-# Required if `cloudProvider=azure`
-azureClusterName: ""
-
-# azureNodeResourceGroup -- Azure resource group where the cluster's nodes are located, typically set as `MC_<cluster-resource-group-name>_<cluster-name>_<location>`.
-# Required if `cloudProvider=azure`
-azureNodeResourceGroup: ""
-
 # azureResourceGroup -- Azure resource group that the cluster is located.
 # Required if `cloudProvider=azure`
 azureResourceGroup: ""
@@ -374,7 +366,6 @@ serviceMonitor:
   ## [RelabelConfig](https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api.md#monitoring.coreos.com/v1.RelabelConfig)
   # serviceMonitor.metricRelabelings -- MetricRelabelConfigs to apply to samples before ingestion.
   metricRelabelings: {}
-
 
 # tolerations -- List of node taints to tolerate (requires Kubernetes >= 1.6).
 tolerations: []
