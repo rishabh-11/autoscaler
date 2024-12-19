@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
@@ -67,15 +68,14 @@ const (
 // MCMCloudProvider implements the cloud provider interface for machine-controller-manager
 // Reference: https://github.com/gardener/machine-controller-manager
 type mcmCloudProvider struct {
-	mcmManager         *McmManager
-	machinedeployments map[types.NamespacedName]*MachineDeployment
-	resourceLimiter    *cloudprovider.ResourceLimiter
+	mcmManager      *McmManager
+	resourceLimiter *cloudprovider.ResourceLimiter
 }
 
 // BuildMcmCloudProvider builds CloudProvider implementation for machine-controller-manager.
 func BuildMcmCloudProvider(mcmManager *McmManager, resourceLimiter *cloudprovider.ResourceLimiter) (cloudprovider.CloudProvider, error) {
 	if mcmManager.discoveryOpts.StaticDiscoverySpecified() {
-		return buildStaticallyDiscoveringProvider(mcmManager, mcmManager.discoveryOpts.NodeGroupSpecs, resourceLimiter)
+		return buildStaticallyDiscoveringProvider(mcmManager, resourceLimiter)
 	}
 	return nil, fmt.Errorf("Failed to build an mcm cloud provider: Either node group specs or node group auto discovery spec must be specified")
 }
@@ -96,16 +96,10 @@ func BuildMCM(opts config.AutoscalingOptions, do cloudprovider.NodeGroupDiscover
 	return provider
 }
 
-func buildStaticallyDiscoveringProvider(mcmManager *McmManager, specs []string, resourceLimiter *cloudprovider.ResourceLimiter) (*mcmCloudProvider, error) {
+func buildStaticallyDiscoveringProvider(mcmManager *McmManager, resourceLimiter *cloudprovider.ResourceLimiter) (*mcmCloudProvider, error) {
 	mcm := &mcmCloudProvider{
-		mcmManager:         mcmManager,
-		machinedeployments: make(map[types.NamespacedName]*MachineDeployment),
-		resourceLimiter:    resourceLimiter,
-	}
-	for _, spec := range specs {
-		if err := mcm.addNodeGroup(spec); err != nil {
-			return nil, err
-		}
+		mcmManager:      mcmManager,
+		resourceLimiter: resourceLimiter,
 	}
 	return mcm, nil
 }
@@ -116,31 +110,14 @@ func (mcm *mcmCloudProvider) Cleanup() error {
 	return nil
 }
 
-// addNodeGroup adds node group defined in string spec. Format:
-// minNodes:maxNodes:namespace.machineDeploymentName
-func (mcm *mcmCloudProvider) addNodeGroup(spec string) error {
-	machinedeployment, err := buildMachineDeploymentFromSpec(spec, mcm.mcmManager)
-	if err != nil {
-		return err
-	}
-	mcm.addMachineDeployment(machinedeployment)
-	return nil
-}
-
-func (mcm *mcmCloudProvider) addMachineDeployment(machinedeployment *MachineDeployment) {
-	key := types.NamespacedName{Namespace: machinedeployment.Namespace, Name: machinedeployment.Name}
-	mcm.machinedeployments[key] = machinedeployment
-	return
-}
-
 func (mcm *mcmCloudProvider) Name() string {
 	return "machine-controller-manager"
 }
 
 // NodeGroups returns all node groups configured for this cloud provider.
 func (mcm *mcmCloudProvider) NodeGroups() []cloudprovider.NodeGroup {
-	result := make([]cloudprovider.NodeGroup, 0, len(mcm.machinedeployments))
-	for _, machinedeployment := range mcm.machinedeployments {
+	result := make([]cloudprovider.NodeGroup, 0, len(mcm.mcmManager.machineDeployments))
+	for _, machinedeployment := range mcm.mcmManager.machineDeployments {
 		if machinedeployment.maxSize == 0 {
 			continue
 		}
@@ -172,7 +149,7 @@ func (mcm *mcmCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprovider.N
 	}
 
 	key := types.NamespacedName{Namespace: md.Namespace, Name: md.Name}
-	_, isManaged := mcm.machinedeployments[key]
+	_, isManaged := mcm.mcmManager.machineDeployments[key]
 	if !isManaged {
 		klog.V(4).Infof("Skipped node %v, it's not managed by this controller", node.Spec.ProviderID)
 		return nil, nil
@@ -293,8 +270,9 @@ type MachineDeployment struct {
 
 	mcmManager *McmManager
 
-	minSize int
-	maxSize int
+	scalingMutex sync.Mutex
+	minSize      int
+	maxSize      int
 }
 
 // MaxSize returns maximum size of the node group.
@@ -541,9 +519,10 @@ func buildMachineDeploymentFromSpec(value string, mcmManager *McmManager) (*Mach
 
 func buildMachineDeployment(mcmManager *McmManager, minSize int, maxSize int, namespace string, name string) *MachineDeployment {
 	return &MachineDeployment{
-		mcmManager: mcmManager,
-		minSize:    minSize,
-		maxSize:    maxSize,
+		mcmManager:   mcmManager,
+		minSize:      minSize,
+		maxSize:      maxSize,
+		scalingMutex: sync.Mutex{},
 		Ref: Ref{
 			Name:      name,
 			Namespace: namespace,

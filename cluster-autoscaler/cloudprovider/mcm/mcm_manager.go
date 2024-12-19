@@ -27,6 +27,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	v1appslister "k8s.io/client-go/listers/apps/v1"
 	"k8s.io/utils/pointer"
@@ -57,7 +58,6 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
-	"k8s.io/autoscaler/cluster-autoscaler/config/dynamic"
 	"k8s.io/autoscaler/cluster-autoscaler/processors/nodegroupset"
 	"k8s.io/autoscaler/cluster-autoscaler/utils/gpu"
 	"k8s.io/client-go/discovery"
@@ -128,6 +128,7 @@ type McmManager struct {
 	namespace               string
 	interrupt               chan struct{}
 	discoveryOpts           cloudprovider.NodeGroupDiscoveryOptions
+	machineDeployments      map[types.NamespacedName]*MachineDeployment
 	deploymentLister        v1appslister.DeploymentLister
 	machineClient           machineapi.MachineV1alpha1Interface
 	machineDeploymentLister machinelisters.MachineDeploymentLister
@@ -264,7 +265,11 @@ func createMCMManagerInternal(discoveryOpts cloudprovider.NodeGroupDiscoveryOpti
 			maxRetryTimeout:         maxRetryTimeout,
 			retryInterval:           retryInterval,
 		}
-
+		for _, spec := range discoveryOpts.NodeGroupSpecs {
+			if err := m.addNodeGroup(spec); err != nil {
+				return nil, err
+			}
+		}
 		targetCoreInformerFactory.Start(m.interrupt)
 		controlMachineInformerFactory.Start(m.interrupt)
 		appsInformerFactory.Start(m.interrupt)
@@ -285,6 +290,23 @@ func createMCMManagerInternal(discoveryOpts cloudprovider.NodeGroupDiscoveryOpti
 	}
 
 	return nil, fmt.Errorf("Unable to start cloud provider MCM for cluster autoscaler: API GroupVersion %q or %q or %q is not available; \nFound: %#v", machineGVR, machineSetGVR, machineDeploymentGVR, availableResources)
+}
+
+// addNodeGroup adds node group defined in string spec. Format:
+// minNodes:maxNodes:namespace.machineDeploymentName
+func (m *McmManager) addNodeGroup(spec string) error {
+	machineDeployment, err := buildMachineDeploymentFromSpec(spec, m)
+	if err != nil {
+		return err
+	}
+	m.addMachineDeployment(machineDeployment)
+	return nil
+}
+
+func (m *McmManager) addMachineDeployment(machineDeployment *MachineDeployment) {
+	key := types.NamespacedName{Namespace: machineDeployment.Namespace, Name: machineDeployment.Name}
+	m.machineDeployments[key] = machineDeployment
+	return
 }
 
 // TODO: In general, any controller checking this needs to be dynamic so
@@ -381,36 +403,11 @@ func (m *McmManager) GetMachineDeploymentForMachine(machine *Ref) (*MachineDeplo
 		return nil, fmt.Errorf("unable to find parent MachineDeployment of given MachineSet object %s %v", machineSetName, err)
 	}
 
-	mcmRef := Ref{
-		Name:      machineDeploymentName,
-		Namespace: m.namespace,
+	machineDeployment, ok := m.machineDeployments[types.NamespacedName{Namespace: m.namespace, Name: machineDeploymentName}]
+	if !ok {
+		return nil, fmt.Errorf("machineDeployment %s not found in the list of machine deployments", machineDeploymentName)
 	}
-
-	discoveryOpts := m.discoveryOpts
-	specs := discoveryOpts.NodeGroupSpecs
-	var min, max int
-	for _, spec := range specs {
-		s, err := dynamic.SpecFromString(spec, true)
-		if err != nil {
-			return nil, fmt.Errorf("Error occurred while parsing the spec")
-		}
-
-		str := strings.Split(s.Name, ".")
-		_, Name := str[0], str[1]
-
-		if Name == machineDeploymentName {
-			min = s.MinSize
-			max = s.MaxSize
-			break
-		}
-	}
-
-	return &MachineDeployment{
-		mcmRef,
-		m,
-		min,
-		max,
-	}, nil
+	return machineDeployment, nil
 }
 
 // Refresh method, for each machine deployment, will reset the priority of the machines if the number of annotated machines is more than desired.
@@ -428,12 +425,19 @@ func (m *McmManager) Refresh() error {
 			klog.Infof("[Refresh] machine deployment %s is under rolling update, skipping", machineDeployment.Name)
 			continue
 		}
+		mcd, ok := m.machineDeployments[types.NamespacedName{Namespace: m.namespace, Name: machineDeployment.Name}]
+		if !ok {
+			klog.Errorf("[Refresh] machine deployment %s not found in the list of machine deployments", machineDeployment.Name)
+			continue
+		}
+		mcd.scalingMutex.Lock()
 		markedMachines := sets.New(strings.Split(machineDeployment.Annotations[machinesMarkedByCAForDeletion], ",")...)
 		// check if number of annotated machine objects is more than desired and correspondingly reset the priority annotation value if needed.
 		machines, err := m.getMachinesForMachineDeployment(machineDeployment.Name)
 		if err != nil {
 			klog.Errorf("[Refresh] failed to get machines for machine deployment %s, hence skipping it. Err: %v", machineDeployment.Name, err.Error())
 			collectiveError = errors.Join(collectiveError, err)
+			mcd.scalingMutex.Unlock()
 			continue
 		}
 		var incorrectlyMarkedMachines []*Ref
@@ -447,6 +451,7 @@ func (m *McmManager) Refresh() error {
 			}
 		}
 		collectiveError = errors.Join(collectiveError, m.resetPriorityForMachines(incorrectlyMarkedMachines))
+		mcd.scalingMutex.Unlock()
 	}
 	return collectiveError
 }
@@ -493,6 +498,9 @@ func (m *McmManager) DeleteMachines(targetMachineRefs []*Ref) error {
 	if err != nil {
 		return err
 	}
+	// acquire the mutex
+	commonMachineDeployment.scalingMutex.Lock()
+	defer commonMachineDeployment.scalingMutex.Unlock()
 	// get the machine deployment and return if rolling update is not finished
 	md, err := m.machineDeploymentLister.MachineDeployments(m.namespace).Get(commonMachineDeployment.Name)
 	if err != nil {
