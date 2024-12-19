@@ -27,6 +27,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"k8s.io/apimachinery/pkg/util/sets"
 	v1appslister "k8s.io/client-go/listers/apps/v1"
 	"k8s.io/utils/pointer"
 	"maps"
@@ -98,6 +99,9 @@ const (
 	machineDeploymentPausedReason = "DeploymentPaused"
 	// machineDeploymentNameLabel key for Machine Deployment name in machine labels
 	machineDeploymentNameLabel = "name"
+	// machinesMarkedByCAForDeletion is the annotation set by CA on machine deployment. Its value denotes the machines that
+	// CA marked for deletion by updating the priority annotation to 1 and scaling down the machine deployment.
+	machinesMarkedByCAForDeletion = "cluster-autoscaler.kubernetes.io/machines-marked-by-ca-for-deletion"
 )
 
 var (
@@ -424,7 +428,7 @@ func (m *McmManager) Refresh() error {
 			klog.Infof("[Refresh] machine deployment %s is under rolling update, skipping", machineDeployment.Name)
 			continue
 		}
-		replicas := machineDeployment.Spec.Replicas
+		markedMachines := sets.New(strings.Split(machineDeployment.Annotations[machinesMarkedByCAForDeletion], ",")...)
 		// check if number of annotated machine objects is more than desired and correspondingly reset the priority annotation value if needed.
 		machines, err := m.getMachinesForMachineDeployment(machineDeployment.Name)
 		if err != nil {
@@ -432,27 +436,17 @@ func (m *McmManager) Refresh() error {
 			collectiveError = errors.Join(collectiveError, err)
 			continue
 		}
-		var machinesMarkedForDeletion []*v1alpha1.Machine
+		var incorrectlyMarkedMachines []*Ref
 		for _, machine := range machines {
 			// no need to reset priority for machines already in termination or failed phase
 			if machine.Status.CurrentStatus.Phase == v1alpha1.MachineTerminating || machine.Status.CurrentStatus.Phase == v1alpha1.MachineFailed {
 				continue
 			}
-			if annotValue, ok := machine.Annotations[machinePriorityAnnotation]; ok && annotValue == priorityValueForCandidateMachines {
-				machinesMarkedForDeletion = append(machinesMarkedForDeletion, machine)
+			if annotValue, ok := machine.Annotations[machinePriorityAnnotation]; ok && annotValue == priorityValueForCandidateMachines && !markedMachines.Has(machine.Name) {
+				incorrectlyMarkedMachines = append(incorrectlyMarkedMachines, &Ref{Name: machine.Name, Namespace: machine.Namespace})
 			}
 		}
-		if int(replicas) > len(machines)-len(machinesMarkedForDeletion) {
-			slices.SortStableFunc(machinesMarkedForDeletion, func(m1, m2 *v1alpha1.Machine) int {
-				return -m1.CreationTimestamp.Compare(m2.CreationTimestamp.Time)
-			})
-			diff := int(replicas) - len(machines) + len(machinesMarkedForDeletion)
-			targetRefs := make([]*Ref, 0, diff)
-			for i := 0; i < min(diff, len(machinesMarkedForDeletion)); i++ {
-				targetRefs = append(targetRefs, &Ref{Name: machinesMarkedForDeletion[i].Name, Namespace: machinesMarkedForDeletion[i].Namespace})
-			}
-			collectiveError = errors.Join(collectiveError, m.resetPriorityForMachines(targetRefs))
-		}
+		collectiveError = errors.Join(collectiveError, m.resetPriorityForMachines(incorrectlyMarkedMachines))
 	}
 	return collectiveError
 }
@@ -508,18 +502,29 @@ func (m *McmManager) DeleteMachines(targetMachineRefs []*Ref) error {
 	if !isRollingUpdateFinished(md) {
 		return fmt.Errorf("MachineDeployment %s is under rolling update , cannot reduce replica count", commonMachineDeployment.Name)
 	}
+	markedMachines := sets.New(strings.Split(md.Annotations[machinesMarkedByCAForDeletion], ",")...)
+	var filteredTargetMachineRefs []*Ref
+	for _, targetMachineRef := range targetMachineRefs {
+		if !markedMachines.Has(targetMachineRef.Name) {
+			filteredTargetMachineRefs = append(filteredTargetMachineRefs, targetMachineRef)
+			markedMachines.Insert(targetMachineRef.Name)
+		} else {
+			klog.Infof("Machine %s is already marked for deletion, skipping", targetMachineRef.Name)
+		}
+	}
+
 	// update priorities of machines to be deleted except the ones already in termination to 1
-	scaleDownAmount, err := m.prioritizeMachinesForDeletion(targetMachineRefs)
+	err = m.prioritizeMachinesForDeletion(filteredTargetMachineRefs)
 	if err != nil {
 		return err
 	}
 	// Trying to update the machineDeployment till the deadline
 	err = m.retry(func(ctx context.Context) (bool, error) {
-		return m.scaleDownMachineDeployment(ctx, commonMachineDeployment.Name, scaleDownAmount)
+		return m.scaleDownMachineDeployment(ctx, commonMachineDeployment.Name, len(filteredTargetMachineRefs), strings.Join(markedMachines.UnsortedList(), ","))
 	}, "MachineDeployment", "update", commonMachineDeployment.Name)
 	if err != nil {
 		klog.Errorf("unable to scale in machine deployment %s, will reset priority of target machines, Error: %v", commonMachineDeployment.Name, err)
-		return errors.Join(err, m.resetPriorityForMachines(targetMachineRefs))
+		return errors.Join(err, m.resetPriorityForMachines(filteredTargetMachineRefs))
 	}
 	return nil
 }
@@ -552,7 +557,7 @@ func (m *McmManager) resetPriorityForMachines(mcRefs []*Ref) error {
 }
 
 // prioritizeMachinesForDeletion prioritizes the targeted machines by updating their priority annotation to 1
-func (m *McmManager) prioritizeMachinesForDeletion(targetMachineRefs []*Ref) (int, error) {
+func (m *McmManager) prioritizeMachinesForDeletion(targetMachineRefs []*Ref) error {
 	var expectedToTerminateMachineNodePairs = make(map[string]string)
 	for _, machineRef := range targetMachineRefs {
 		// Trying to update the priority of machineRef till m.maxRetryTimeout
@@ -573,11 +578,11 @@ func (m *McmManager) prioritizeMachinesForDeletion(targetMachineRefs []*Ref) (in
 			return m.updateAnnotationOnMachine(ctx, mc.Name, machinePriorityAnnotation, priorityValueForCandidateMachines)
 		}, "Machine", "update", machineRef.Name); err != nil {
 			klog.Errorf("could not prioritize machine %s for deletion, aborting scale in of machine deployment, Error: %v", machineRef.Name, err)
-			return 0, fmt.Errorf("could not prioritize machine %s for deletion, aborting scale in of machine deployment, Error: %v", machineRef.Name, err)
+			return fmt.Errorf("could not prioritize machine %s for deletion, aborting scale in of machine deployment, Error: %v", machineRef.Name, err)
 		}
 	}
 	klog.V(2).Infof("Expected to remove following {machineRef: corresponding node} pairs %s", expectedToTerminateMachineNodePairs)
-	return len(expectedToTerminateMachineNodePairs), nil
+	return nil
 }
 
 // updateAnnotationOnMachine returns error only when updating the annotations on machine has been failing consequently and deadline is crossed
@@ -610,7 +615,7 @@ func (m *McmManager) updateAnnotationOnMachine(ctx context.Context, mcName strin
 }
 
 // scaleDownMachineDeployment scales down the machine deployment by the provided scaleDownAmount and returns the updated spec.Replicas after scale down.
-func (m *McmManager) scaleDownMachineDeployment(ctx context.Context, mdName string, scaleDownAmount int) (bool, error) {
+func (m *McmManager) scaleDownMachineDeployment(ctx context.Context, mdName string, scaleDownAmount int, markedMachines string) (bool, error) {
 	md, err := m.machineDeploymentLister.MachineDeployments(m.namespace).Get(mdName)
 	if err != nil {
 		klog.Errorf("Unable to fetch MachineDeployment object %s, Error: %v", mdName, err)
@@ -626,6 +631,10 @@ func (m *McmManager) scaleDownMachineDeployment(ctx context.Context, mdName stri
 		return false, fmt.Errorf("cannot delete machines in machine deployment %s, expected decrease in replicas %d is more than current replicas %d", mdName, scaleDownAmount, mdclone.Spec.Replicas)
 	}
 	mdclone.Spec.Replicas = expectedReplicas
+	if mdclone.Annotations == nil {
+		mdclone.Annotations = make(map[string]string)
+	}
+	mdclone.Annotations[machinesMarkedByCAForDeletion] = markedMachines
 	_, err = m.machineClient.MachineDeployments(mdclone.Namespace).Update(ctx, mdclone, metav1.UpdateOptions{})
 	if err != nil {
 		return true, fmt.Errorf("unable to scale in machine deployment %s, Error: %w", mdName, err)
