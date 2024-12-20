@@ -254,6 +254,7 @@ func createMCMManagerInternal(discoveryOpts cloudprovider.NodeGroupDiscoveryOpti
 		m := &McmManager{
 			namespace:               namespace,
 			interrupt:               make(chan struct{}),
+			machineDeployments:      make(map[types.NamespacedName]*MachineDeployment),
 			deploymentLister:        deploymentLister,
 			machineClient:           controlMachineClient,
 			machineClassLister:      machineClassLister,
