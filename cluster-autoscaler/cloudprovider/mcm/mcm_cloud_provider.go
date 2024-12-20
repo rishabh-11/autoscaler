@@ -24,6 +24,10 @@ package mcm
 import (
 	"context"
 	"fmt"
+	"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -321,6 +325,8 @@ func (machinedeployment *MachineDeployment) IncreaseSize(delta int) error {
 	if delta <= 0 {
 		return fmt.Errorf("size increase must be positive")
 	}
+	machinedeployment.scalingMutex.Lock()
+	defer machinedeployment.scalingMutex.Unlock()
 	size, err := machinedeployment.mcmManager.GetMachineDeploymentSize(machinedeployment)
 	if err != nil {
 		return err
@@ -344,6 +350,8 @@ func (machinedeployment *MachineDeployment) DecreaseTargetSize(delta int) error 
 	if delta >= 0 {
 		return fmt.Errorf("size decrease size must be negative")
 	}
+	machinedeployment.scalingMutex.Lock()
+	defer machinedeployment.scalingMutex.Unlock()
 	size, err := machinedeployment.mcmManager.GetMachineDeploymentSize(machinedeployment)
 	if err != nil {
 		return err
@@ -356,6 +364,54 @@ func (machinedeployment *MachineDeployment) DecreaseTargetSize(delta int) error 
 	return machinedeployment.mcmManager.retry(func(ctx context.Context) (bool, error) {
 		return machinedeployment.mcmManager.SetMachineDeploymentSize(ctx, machinedeployment, int64(decreaseAmount))
 	}, "MachineDeployment", "update", machinedeployment.Name)
+}
+
+// Refresh resets the priority annotation for the machines that are not present in machines-marked-by-ca-for-deletion annotation on the machineDeployment
+func (machineDeployment *MachineDeployment) Refresh() error {
+	machineDeployment.scalingMutex.Lock()
+	defer machineDeployment.scalingMutex.Unlock()
+	mcd, err := machineDeployment.mcmManager.machineDeploymentLister.MachineDeployments(machineDeployment.Namespace).Get(machineDeployment.Name)
+	if err != nil {
+		return fmt.Errorf("failed to get machine deployment %s: %v", machineDeployment.Name, err)
+	}
+	// ignore the machine deployment if it is in rolling update
+	if !isRollingUpdateFinished(mcd) {
+		klog.Infof("machine deployment %s is under rolling update, skipping", machineDeployment.Name)
+		return nil
+	}
+	markedMachines := sets.New(strings.Split(mcd.Annotations[machinesMarkedByCAForDeletion], ",")...)
+	machines, err := machineDeployment.mcmManager.getMachinesForMachineDeployment(machineDeployment.Name)
+	if err != nil {
+		klog.Errorf("[Refresh] failed to get machines for machine deployment %s, hence skipping it. Err: %v", machineDeployment.Name, err.Error())
+		return err
+	}
+	var incorrectlyMarkedMachines []*Ref
+	for _, machine := range machines {
+		// no need to reset priority for machines already in termination or failed phase
+		if machine.Status.CurrentStatus.Phase == v1alpha1.MachineTerminating || machine.Status.CurrentStatus.Phase == v1alpha1.MachineFailed {
+			continue
+		}
+		if annotValue, ok := machine.Annotations[machinePriorityAnnotation]; ok && annotValue == priorityValueForCandidateMachines && !markedMachines.Has(machine.Name) {
+			incorrectlyMarkedMachines = append(incorrectlyMarkedMachines, &Ref{Name: machine.Name, Namespace: machine.Namespace})
+		}
+	}
+	var updatedMarkedMachines []string
+	for machineName := range markedMachines {
+		if slices.ContainsFunc(machines, func(mc *v1alpha1.Machine) bool {
+			return mc.Name == machineName
+		}) {
+			updatedMarkedMachines = append(updatedMarkedMachines, machineName)
+		}
+	}
+	clone := mcd.DeepCopy()
+	clone.Annotations[machinesMarkedByCAForDeletion] = strings.Join(updatedMarkedMachines, ",")
+	ctx, cancelFn := context.WithTimeout(context.Background(), machineDeployment.mcmManager.maxRetryTimeout)
+	defer cancelFn()
+	_, err = machineDeployment.mcmManager.machineClient.MachineDeployments(machineDeployment.Namespace).Update(ctx, clone, metav1.UpdateOptions{})
+	if err != nil {
+		return err
+	}
+	return machineDeployment.mcmManager.resetPriorityForMachines(incorrectlyMarkedMachines)
 }
 
 // Belongs returns true if the given node belongs to the NodeGroup.
