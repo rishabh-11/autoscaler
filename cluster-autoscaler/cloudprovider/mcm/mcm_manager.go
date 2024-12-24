@@ -28,7 +28,6 @@ import (
 	"flag"
 	"fmt"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	v1appslister "k8s.io/client-go/listers/apps/v1"
 	"k8s.io/utils/pointer"
 	"maps"
@@ -370,7 +369,7 @@ func CreateMcmManager(discoveryOpts cloudprovider.NodeGroupDiscoveryOptions) (*M
 }
 
 // GetMachineDeploymentForMachine returns the MachineDeployment for the Machine object.
-func (m *McmManager) GetMachineDeploymentForMachine(machine *Ref) (*MachineDeployment, error) {
+func (m *McmManager) GetMachineDeploymentForMachine(machine *types.NamespacedName) (*MachineDeployment, error) {
 	if machine.Name == "" {
 		// Considering the possibility when Machine has been deleted but due to cached Node object it appears here.
 		return nil, fmt.Errorf("Node does not Exists")
@@ -455,7 +454,7 @@ func (m *McmManager) SetMachineDeploymentSize(ctx context.Context, machinedeploy
 }
 
 // DeleteMachines annotates the target machines and also reduces the desired replicas of the MachineDeployment.
-func (m *McmManager) DeleteMachines(targetMachineRefs []*Ref) error {
+func (m *McmManager) DeleteMachines(targetMachineRefs []*types.NamespacedName) error {
 	if len(targetMachineRefs) == 0 {
 		return nil
 	}
@@ -475,7 +474,7 @@ func (m *McmManager) DeleteMachines(targetMachineRefs []*Ref) error {
 	if !isRollingUpdateFinished(md) {
 		return fmt.Errorf("MachineDeployment %s is under rolling update , cannot reduce replica count", commonMachineDeployment.Name)
 	}
-	markedMachines := sets.New(strings.Split(md.Annotations[machinesMarkedByCAForDeletion], ",")...)
+	markedMachines := getMachinesMarkedByCAForDeletion(md)
 	// update priorities of machines to be deleted except the ones already in termination to 1
 	machinesWithPrio1, err := m.prioritizeMachinesForDeletion(targetMachineRefs)
 	if err != nil {
@@ -493,7 +492,7 @@ func (m *McmManager) DeleteMachines(targetMachineRefs []*Ref) error {
 }
 
 // resetPriorityForMachines resets the priority of machines passed in the argument to defaultPriorityValue
-func (m *McmManager) resetPriorityForMachines(mcRefs []*Ref) error {
+func (m *McmManager) resetPriorityForMachines(mcRefs []*types.NamespacedName) error {
 	var collectiveError error
 	for _, mcRef := range mcRefs {
 		machine, err := m.machineLister.Machines(m.namespace).Get(mcRef.Name)
@@ -524,7 +523,7 @@ func (m *McmManager) resetPriorityForMachines(mcRefs []*Ref) error {
 }
 
 // prioritizeMachinesForDeletion prioritizes the targeted machines by updating their priority annotation to 1
-func (m *McmManager) prioritizeMachinesForDeletion(targetMachineRefs []*Ref) ([]string, error) {
+func (m *McmManager) prioritizeMachinesForDeletion(targetMachineRefs []*types.NamespacedName) ([]string, error) {
 	var expectedToTerminateMachineNodePairs = make(map[string]string)
 	var machinesMarkedWithPrio1 []string
 	for _, machineRef := range targetMachineRefs {
