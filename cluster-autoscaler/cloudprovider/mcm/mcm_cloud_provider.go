@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"slices"
 	"strconv"
 	"strings"
@@ -39,7 +38,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
 	"k8s.io/autoscaler/cluster-autoscaler/config"
-	"k8s.io/autoscaler/cluster-autoscaler/config/dynamic"
 	"k8s.io/autoscaler/cluster-autoscaler/utils/errors"
 	"k8s.io/klog/v2"
 	schedulerframework "k8s.io/kubernetes/pkg/scheduler/framework"
@@ -364,46 +362,46 @@ func (machineDeployment *MachineDeployment) DecreaseTargetSize(delta int) error 
 func (machineDeployment *MachineDeployment) Refresh() error {
 	machineDeployment.scalingMutex.Lock()
 	defer machineDeployment.scalingMutex.Unlock()
-	mcd, err := machineDeployment.mcmManager.machineDeploymentLister.MachineDeployments(machineDeployment.Namespace).Get(machineDeployment.Name)
+	mcd, err := machineDeployment.mcmManager.GetMachineDeploymentResource(machineDeployment.Name)
 	if err != nil {
-		return fmt.Errorf("failed to get machine deployment %s: %v", machineDeployment.Name, err)
+		return err
 	}
-	// ignore the machine deployment if it is in rolling update
-	if !isRollingUpdateFinished(mcd) {
-		klog.Infof("machine deployment %s is under rolling update, skipping", machineDeployment.Name)
-		return nil
-	}
-	markedMachines := getMachinesMarkedByCAForDeletion(mcd)
+	markedMachineNames := getMachineNamesMarkedByCAForDeletion(mcd)
 	machines, err := machineDeployment.mcmManager.getMachinesForMachineDeployment(machineDeployment.Name)
 	if err != nil {
 		klog.Errorf("[Refresh] failed to get machines for machine deployment %s, hence skipping it. Err: %v", machineDeployment.Name, err.Error())
 		return err
 	}
-	var incorrectlyMarkedMachines []*types.NamespacedName
-	for _, machine := range machines {
-		// no need to reset priority for machines already in termination or failed phase
-		if machine.Status.CurrentStatus.Phase == v1alpha1.MachineTerminating || machine.Status.CurrentStatus.Phase == v1alpha1.MachineFailed {
-			continue
-		}
-		if annotValue, ok := machine.Annotations[machinePriorityAnnotation]; ok && annotValue == priorityValueForCandidateMachines && !markedMachines.Has(machine.Name) {
-			incorrectlyMarkedMachines = append(incorrectlyMarkedMachines, &types.NamespacedName{Name: machine.Name, Namespace: machine.Namespace})
-		}
-	}
-	var updatedMarkedMachines []string
-	for machineName := range markedMachines {
+	// update the machines-marked-by-ca-for-deletion annotation with the machines that are still marked for deletion by CA.
+	// This is done to ensure that the machines that are no longer present are removed from the annotation.
+	var updatedMarkedMachineNames []string
+	for _, machineName := range markedMachineNames {
 		if slices.ContainsFunc(machines, func(mc *v1alpha1.Machine) bool {
 			return mc.Name == machineName
 		}) {
-			updatedMarkedMachines = append(updatedMarkedMachines, machineName)
+			updatedMarkedMachineNames = append(updatedMarkedMachineNames, machineName)
 		}
 	}
 	clone := mcd.DeepCopy()
-	clone.Annotations[machinesMarkedByCAForDeletion] = strings.Join(updatedMarkedMachines, ",")
+	clone.Annotations[machinesMarkedByCAForDeletion] = createMachinesMarkedForDeletionAnnotationValue(updatedMarkedMachineNames)
 	ctx, cancelFn := context.WithTimeout(context.Background(), machineDeployment.mcmManager.maxRetryTimeout)
 	defer cancelFn()
 	_, err = machineDeployment.mcmManager.machineClient.MachineDeployments(machineDeployment.Namespace).Update(ctx, clone, metav1.UpdateOptions{})
 	if err != nil {
 		return err
+	}
+	// reset the priority for the machines that are not present in machines-marked-by-ca-for-deletion annotation
+	var incorrectlyMarkedMachines []types.NamespacedName
+	for _, machine := range machines {
+		// no need to reset priority for machines already in termination or failed phase
+		if isMachineFailedOrTerminating(machine) {
+			continue
+		}
+		// check if the machine is marked for deletion by CA but not present in machines-marked-by-ca-for-deletion annotation. This means that CA was not able to reduce the replicas
+		// corresponding to this machine and hence the machine should not be marked for deletion.
+		if annotValue, ok := machine.Annotations[machinePriorityAnnotation]; ok && annotValue == priorityValueForDeletionCandidateMachines && !slices.Contains(markedMachineNames, machine.Name) {
+			incorrectlyMarkedMachines = append(incorrectlyMarkedMachines, types.NamespacedName{Name: machine.Name, Namespace: machine.Namespace})
+		}
 	}
 	return machineDeployment.mcmManager.resetPriorityForMachines(incorrectlyMarkedMachines)
 }
@@ -554,32 +552,10 @@ func (machineDeployment *MachineDeployment) AtomicIncreaseSize(delta int) error 
 	return cloudprovider.ErrNotImplemented
 }
 
-func buildMachineDeploymentFromSpec(value string, mcmManager *McmManager) (*MachineDeployment, error) {
-	spec, err := dynamic.SpecFromString(value, true)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse node group spec: %v", err)
+// getMachineNamesMarkedByCAForDeletion returns the set of machine names marked by CA for deletion.
+func getMachineNamesMarkedByCAForDeletion(mcd *v1alpha1.MachineDeployment) []string {
+	if mcd.Annotations == nil || mcd.Annotations[machinesMarkedByCAForDeletion] == "" {
+		return make([]string, 0)
 	}
-	s := strings.Split(spec.Name, ".")
-	Namespace, Name := s[0], s[1]
-
-	machinedeployment := buildMachineDeployment(mcmManager, spec.MinSize, spec.MaxSize, Namespace, Name)
-	return machinedeployment, nil
-}
-
-func getMachinesMarkedByCAForDeletion(mcd *v1alpha1.MachineDeployment) sets.Set[string] {
-	return sets.New(strings.Split(mcd.Annotations[machinesMarkedByCAForDeletion], ",")...)
-}
-
-func buildMachineDeployment(mcmManager *McmManager, minSize int, maxSize int, namespace string, name string) *MachineDeployment {
-	return &MachineDeployment{
-		mcmManager:   mcmManager,
-		minSize:      minSize,
-		maxSize:      maxSize,
-		scalingMutex: sync.Mutex{},
-		NamespacedName: types.NamespacedName{
-			Name:      name,
-			Namespace: namespace,
-		},
-	}
+	return strings.Split(mcd.Annotations[machinesMarkedByCAForDeletion], ",")
 }
