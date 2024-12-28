@@ -383,15 +383,21 @@ func (machineDeployment *MachineDeployment) Refresh() error {
 		}
 	}
 	clone := mcd.DeepCopy()
-	clone.Annotations[machinesMarkedByCAForDeletion] = createMachinesMarkedForDeletionAnnotationValue(updatedMarkedMachineNames)
-	ctx, cancelFn := context.WithTimeout(context.Background(), machineDeployment.mcmManager.maxRetryTimeout)
-	defer cancelFn()
-	_, err = machineDeployment.mcmManager.machineClient.MachineDeployments(machineDeployment.Namespace).Update(ctx, clone, metav1.UpdateOptions{})
-	if err != nil {
-		return err
+	if clone.Annotations == nil {
+		clone.Annotations = map[string]string{}
+	}
+	updatedMachinesMarkedByCAForDeletionAnnotationVal := createMachinesMarkedForDeletionAnnotationValue(updatedMarkedMachineNames)
+	if clone.Annotations[machinesMarkedByCAForDeletion] != updatedMachinesMarkedByCAForDeletionAnnotationVal {
+		clone.Annotations[machinesMarkedByCAForDeletion] = updatedMachinesMarkedByCAForDeletionAnnotationVal
+		ctx, cancelFn := context.WithTimeout(context.Background(), machineDeployment.mcmManager.maxRetryTimeout)
+		defer cancelFn()
+		_, err = machineDeployment.mcmManager.machineClient.MachineDeployments(machineDeployment.Namespace).Update(ctx, clone, metav1.UpdateOptions{})
+		if err != nil {
+			return err
+		}
 	}
 	// reset the priority for the machines that are not present in machines-marked-by-ca-for-deletion annotation
-	var incorrectlyMarkedMachines []types.NamespacedName
+	var incorrectlyMarkedMachines []string
 	for _, machine := range machines {
 		// no need to reset priority for machines already in termination or failed phase
 		if isMachineFailedOrTerminating(machine) {
@@ -400,7 +406,7 @@ func (machineDeployment *MachineDeployment) Refresh() error {
 		// check if the machine is marked for deletion by CA but not present in machines-marked-by-ca-for-deletion annotation. This means that CA was not able to reduce the replicas
 		// corresponding to this machine and hence the machine should not be marked for deletion.
 		if annotValue, ok := machine.Annotations[machinePriorityAnnotation]; ok && annotValue == priorityValueForDeletionCandidateMachines && !slices.Contains(markedMachineNames, machine.Name) {
-			incorrectlyMarkedMachines = append(incorrectlyMarkedMachines, types.NamespacedName{Name: machine.Name, Namespace: machine.Namespace})
+			incorrectlyMarkedMachines = append(incorrectlyMarkedMachines, machine.Name)
 		}
 	}
 	return machineDeployment.mcmManager.resetPriorityForMachines(incorrectlyMarkedMachines)

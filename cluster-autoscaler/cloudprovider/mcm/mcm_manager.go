@@ -267,10 +267,9 @@ func createMCMManagerInternal(discoveryOpts cloudprovider.NodeGroupDiscoveryOpti
 			maxRetryTimeout:         maxRetryTimeout,
 			retryInterval:           retryInterval,
 		}
-		for _, spec := range discoveryOpts.NodeGroupSpecs {
-			if err := m.addNodeGroup(spec); err != nil {
-				return nil, err
-			}
+		err = m.generateMachineDeploymentMap()
+		if err != nil {
+			return nil, err
 		}
 		targetCoreInformerFactory.Start(m.interrupt)
 		controlMachineInformerFactory.Start(m.interrupt)
@@ -292,6 +291,15 @@ func createMCMManagerInternal(discoveryOpts cloudprovider.NodeGroupDiscoveryOpti
 	}
 
 	return nil, fmt.Errorf("Unable to start cloud provider MCM for cluster autoscaler: API GroupVersion %q or %q or %q is not available; \nFound: %#v", machineGVR, machineSetGVR, machineDeploymentGVR, availableResources)
+}
+
+func (m *McmManager) generateMachineDeploymentMap() error {
+	for _, spec := range m.discoveryOpts.NodeGroupSpecs {
+		if err := m.addNodeGroup(spec); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // addNodeGroup adds node group defined in string spec. Format:
@@ -486,22 +494,23 @@ func (m *McmManager) DeleteMachines(targetMachineRefs []*types.NamespacedName) e
 		return m.scaleDownAndAnnotateMachineDeployment(ctx, commonMachineDeployment.Name, len(machineNamesWithPrio1), createMachinesMarkedForDeletionAnnotationValue(machineNamesMarkedByCA))
 	}, "MachineDeployment", "update", commonMachineDeployment.Name)
 	if err != nil {
-		klog.Errorf("unable to scale in machine deployment %s, Error: %v", commonMachineDeployment.Name, err)
+		klog.Errorf("unable to scale in machine deployment %s, will reset priority of target machines, Error: %v", commonMachineDeployment.Name, err)
+		return errors.Join(err, m.resetPriorityForMachines(machineNamesWithPrio1))
 	}
-	return nil
+	return err
 }
 
 // resetPriorityForMachines resets the priority of machines passed in the argument to defaultPriorityValue
-func (m *McmManager) resetPriorityForMachines(mcRefs []types.NamespacedName) error {
+func (m *McmManager) resetPriorityForMachines(mcNames []string) error {
 	var collectiveError []error
-	for _, mcRef := range mcRefs {
-		machine, err := m.machineLister.Machines(m.namespace).Get(mcRef.Name)
+	for _, mcName := range mcNames {
+		machine, err := m.machineLister.Machines(m.namespace).Get(mcName)
 		if kube_errors.IsNotFound(err) {
-			klog.Warningf("Machine %s not found, skipping resetting priority annotation", mcRef.Name)
+			klog.Warningf("Machine %s not found, skipping resetting priority annotation", mcName)
 			continue
 		}
 		if err != nil {
-			collectiveError = append(collectiveError, fmt.Errorf("unable to get Machine object %s, Error: %v", mcRef, err))
+			collectiveError = append(collectiveError, fmt.Errorf("unable to get Machine object %s, Error: %v", mcName, err))
 			continue
 		}
 		ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(defaultResetAnnotationTimeout))
