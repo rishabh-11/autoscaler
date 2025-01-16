@@ -899,8 +899,8 @@ func (m *McmManager) GetMachineDeploymentNodeTemplate(nodeGroupName string) (*no
 func (m *McmManager) GetMachineDeploymentObject(mdName string) (*v1alpha1.MachineDeployment, error) {
 	md, err := m.machineDeploymentLister.MachineDeployments(m.namespace).Get(mdName)
 	if err != nil {
-		klog.Errorf("unable to fetch MachineDeployments object %s, Error: %v", mdName, err)
-		return nil, fmt.Errorf("unable to fetch MachineDeployments object %s, Error: %v", mdName, err)
+		klog.Errorf("unable to fetch MachineDeployment object %s, Error: %v", mdName, err)
+		return nil, fmt.Errorf("unable to fetch MachineDeployment object %s, Error: %v", mdName, err)
 	}
 	return md, nil
 }
