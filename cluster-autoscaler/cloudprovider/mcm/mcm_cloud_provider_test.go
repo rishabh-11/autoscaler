@@ -153,7 +153,7 @@ func TestDeleteNodes(t *testing.T) {
 				prio1Machines: nil,
 				mdName:        "machinedeployment-1",
 				mdReplicas:    2,
-				err:           fmt.Errorf("NodeGroupImpl machinedeployment-1 is under rolling update , cannot reduce replica count"),
+				err:           fmt.Errorf("MachineDeployment machinedeployment-1 is under rolling update , cannot reduce replica count"),
 			},
 		},
 		{
@@ -645,7 +645,7 @@ func TestGetOptions(t *testing.T) {
 				nodeGroups: []string{nodeGroup1},
 			},
 			expect{
-				err: fmt.Errorf("unable to fetch NodeGroupImpl object machinedeployment-1, Error: machinedeployment.machine.sapcloud.io \"machinedeployment-1\" not found"),
+				err: fmt.Errorf("unable to fetch MachineDeployment object machinedeployment-1, Error: machinedeployment.machine.sapcloud.io \"machinedeployment-1\" not found"),
 			},
 		},
 		{
