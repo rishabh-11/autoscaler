@@ -153,7 +153,7 @@ func TestDeleteNodes(t *testing.T) {
 				prio1Machines: nil,
 				mdName:        "machinedeployment-1",
 				mdReplicas:    2,
-				err:           fmt.Errorf("MachineDeployment machinedeployment-1 is under rolling update , cannot reduce replica count"),
+				err:           fmt.Errorf("NodeGroupImpl machinedeployment-1 is under rolling update , cannot reduce replica count"),
 			},
 		},
 		{
@@ -309,7 +309,7 @@ func TestDeleteNodes(t *testing.T) {
 				trackers.ControlMachine.SetFailAtFakeResourceActions(entry.setup.controlMachineFakeResourceActions)
 			}
 
-			md, err := buildMachineDeploymentFromSpec(entry.setup.nodeGroups[0], m)
+			md, err := buildNodeGroupImplFromSpec(entry.setup.nodeGroups[0], m)
 			g.Expect(err).To(BeNil())
 
 			err = md.DeleteNodes([]*corev1.Node{entry.action.node})
@@ -323,7 +323,7 @@ func TestDeleteNodes(t *testing.T) {
 			machineDeployment, err := m.machineClient.MachineDeployments(m.namespace).Get(context.TODO(), entry.expect.mdName, metav1.GetOptions{})
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(machineDeployment.Spec.Replicas).To(BeNumerically("==", entry.expect.mdReplicas))
-			g.Expect(machineDeployment.Annotations[machinesMarkedByCAForDeletion]).To(Equal(entry.expect.machinesMarkedByCAAnnotationValue))
+			g.Expect(machineDeployment.Annotations[machinesMarkedByCAForDeletionAnnotation]).To(Equal(entry.expect.machinesMarkedByCAAnnotationValue))
 
 			machines, err := m.machineClient.Machines(m.namespace).List(context.TODO(), metav1.ListOptions{
 				LabelSelector: metav1.FormatLabelSelector(&metav1.LabelSelector{
@@ -359,7 +359,7 @@ func TestIdempotencyOfDeleteNodes(t *testing.T) {
 	m, trackers, hasSyncedCacheFns := createMcmManager(t, stop, testNamespace, setupObj.nodeGroups, controlMachineObjects, targetCoreObjects, nil)
 	defer trackers.Stop()
 	waitForCacheSync(t, stop, hasSyncedCacheFns)
-	md, err := buildMachineDeploymentFromSpec(setupObj.nodeGroups[0], m)
+	md, err := buildNodeGroupImplFromSpec(setupObj.nodeGroups[0], m)
 	g.Expect(err).To(BeNil())
 
 	err = md.DeleteNodes(newNodes(1, "fakeID"))
@@ -370,7 +370,7 @@ func TestIdempotencyOfDeleteNodes(t *testing.T) {
 	machineDeployment, err := m.machineClient.MachineDeployments(m.namespace).Get(context.TODO(), setupObj.machineDeployments[0].Name, metav1.GetOptions{})
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(machineDeployment.Spec.Replicas).To(BeNumerically("==", 2))
-	g.Expect(machineDeployment.Annotations[machinesMarkedByCAForDeletion]).To(Equal(createMachinesMarkedForDeletionAnnotationValue(generateNames("machine", 1))))
+	g.Expect(machineDeployment.Annotations[machinesMarkedByCAForDeletionAnnotation]).To(Equal(createMachinesMarkedForDeletionAnnotationValue(generateNames("machine", 1))))
 }
 
 func TestRefresh(t *testing.T) {
@@ -429,7 +429,7 @@ func TestRefresh(t *testing.T) {
 			setup{
 				nodes:              newNodes(1, "fakeID"),
 				machines:           newMachines(1, "fakeID", nil, "machinedeployment-1", "machineset-1", []string{"1"}),
-				machineDeployments: newMachineDeployments(1, 0, nil, map[string]string{machinesMarkedByCAForDeletion: "machine-1,machine-2"}, nil),
+				machineDeployments: newMachineDeployments(1, 0, nil, map[string]string{machinesMarkedByCAForDeletionAnnotation: "machine-1,machine-2"}, nil),
 				nodeGroups:         []string{nodeGroup2},
 				mcmDeployment:      newMCMDeployment(1),
 			},
@@ -581,7 +581,7 @@ func TestNodes(t *testing.T) {
 				trackers.ControlMachine.SetFailAtFakeResourceActions(entry.setup.controlMachineFakeResourceActions)
 			}
 
-			md, err := buildMachineDeploymentFromSpec(entry.setup.nodeGroups[0], m)
+			md, err := buildNodeGroupImplFromSpec(entry.setup.nodeGroups[0], m)
 			g.Expect(err).To(BeNil())
 
 			returnedInstances, err := md.Nodes()
@@ -645,7 +645,7 @@ func TestGetOptions(t *testing.T) {
 				nodeGroups: []string{nodeGroup1},
 			},
 			expect{
-				err: fmt.Errorf("unable to fetch MachineDeployment object machinedeployment-1, Error: machinedeployment.machine.sapcloud.io \"machinedeployment-1\" not found"),
+				err: fmt.Errorf("unable to fetch NodeGroupImpl object machinedeployment-1, Error: machinedeployment.machine.sapcloud.io \"machinedeployment-1\" not found"),
 			},
 		},
 		{
@@ -733,7 +733,7 @@ func TestGetOptions(t *testing.T) {
 			defer trackers.Stop()
 			waitForCacheSync(t, stop, hasSyncedCacheFns)
 
-			md, err := buildMachineDeploymentFromSpec(entry.setup.nodeGroups[0], m)
+			md, err := buildNodeGroupImplFromSpec(entry.setup.nodeGroups[0], m)
 			g.Expect(err).To(BeNil())
 
 			options, err := md.GetOptions(ngAutoScalingOpDefaults)

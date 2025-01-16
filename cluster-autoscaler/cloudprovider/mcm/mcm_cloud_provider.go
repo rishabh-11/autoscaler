@@ -106,7 +106,7 @@ func buildStaticallyDiscoveringProvider(mcmManager *McmManager, resourceLimiter 
 	return mcm, nil
 }
 
-// Cleanup stops the go routine that is handling the current view of the MachineDeployment in the form of a cache
+// Cleanup stops the go routine that is handling the current view of the NodeGroupImpl in the form of a cache
 func (mcm *mcmCloudProvider) Cleanup() error {
 	mcm.mcmManager.Cleanup()
 	return nil
@@ -118,8 +118,8 @@ func (mcm *mcmCloudProvider) Name() string {
 
 // NodeGroups returns all node groups configured for this cloud provider.
 func (mcm *mcmCloudProvider) NodeGroups() []cloudprovider.NodeGroup {
-	result := make([]cloudprovider.NodeGroup, 0, len(mcm.mcmManager.machineDeployments))
-	for _, machinedeployment := range mcm.mcmManager.machineDeployments {
+	result := make([]cloudprovider.NodeGroup, 0, len(mcm.mcmManager.nodeGroups))
+	for _, machinedeployment := range mcm.mcmManager.nodeGroups {
 		if machinedeployment.maxSize == 0 {
 			continue
 		}
@@ -145,13 +145,13 @@ func (mcm *mcmCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprovider.N
 		return nil, nil
 	}
 
-	md, err := mcm.mcmManager.GetMachineDeploymentForMachine(ref)
+	md, err := mcm.mcmManager.GetNodeGroupImpl(ref)
 	if err != nil {
 		return nil, err
 	}
 
 	key := types.NamespacedName{Namespace: md.Namespace, Name: md.Name}
-	_, isManaged := mcm.mcmManager.machineDeployments[key]
+	_, isManaged := mcm.mcmManager.nodeGroups[key]
 	if !isManaged {
 		klog.V(4).Infof("Skipped node %v, it's not managed by this controller", node.Spec.ProviderID)
 		return nil, nil
@@ -260,8 +260,8 @@ func ReferenceFromProviderID(m *McmManager, id string) (*types.NamespacedName, e
 	}, nil
 }
 
-// MachineDeployment implements NodeGroup interface.
-type MachineDeployment struct {
+// NodeGroupImpl implements NodeGroup interface.
+type NodeGroupImpl struct {
 	types.NamespacedName
 
 	mcmManager *McmManager
@@ -272,64 +272,64 @@ type MachineDeployment struct {
 }
 
 // MaxSize returns maximum size of the node group.
-func (machineDeployment *MachineDeployment) MaxSize() int {
-	return machineDeployment.maxSize
+func (ngImpl *NodeGroupImpl) MaxSize() int {
+	return ngImpl.maxSize
 }
 
 // MinSize returns minimum size of the node group.
-func (machineDeployment *MachineDeployment) MinSize() int {
-	return machineDeployment.minSize
+func (ngImpl *NodeGroupImpl) MinSize() int {
+	return ngImpl.minSize
 }
 
 // TargetSize returns the current TARGET size of the node group. It is possible that the
 // number is different from the number of nodes registered in Kubernetes.
-func (machineDeployment *MachineDeployment) TargetSize() (int, error) {
-	size, err := machineDeployment.mcmManager.GetMachineDeploymentSize(machineDeployment)
+func (ngImpl *NodeGroupImpl) TargetSize() (int, error) {
+	size, err := ngImpl.mcmManager.GetMachineDeploymentSize(ngImpl.Name)
 	return int(size), err
 }
 
 // Exist checks if the node group really exists on the cloud provider side. Allows to tell the
 // theoretical node group from the real one.
 // TODO: Implement this to check if machine-deployment really exists.
-func (machineDeployment *MachineDeployment) Exist() bool {
+func (ngImpl *NodeGroupImpl) Exist() bool {
 	return true
 }
 
 // Create creates the node group on the cloud provider side.
-func (machineDeployment *MachineDeployment) Create() (cloudprovider.NodeGroup, error) {
+func (ngImpl *NodeGroupImpl) Create() (cloudprovider.NodeGroup, error) {
 	return nil, cloudprovider.ErrAlreadyExist
 }
 
 // Autoprovisioned returns true if the node group is autoprovisioned.
-func (machineDeployment *MachineDeployment) Autoprovisioned() bool {
+func (ngImpl *NodeGroupImpl) Autoprovisioned() bool {
 	return false
 }
 
 // Delete deletes the node group on the cloud provider side.
 // This will be executed only for autoprovisioned node groups, once their size drops to 0.
-func (machineDeployment *MachineDeployment) Delete() error {
+func (ngImpl *NodeGroupImpl) Delete() error {
 	return cloudprovider.ErrNotImplemented
 }
 
 // IncreaseSize of the Machinedeployment.
-func (machineDeployment *MachineDeployment) IncreaseSize(delta int) error {
-	klog.V(0).Infof("Received request to increase size of machine deployment %s by %d", machineDeployment.Name, delta)
+func (ngImpl *NodeGroupImpl) IncreaseSize(delta int) error {
+	klog.V(0).Infof("Received request to increase size of machine deployment %s by %d", ngImpl.Name, delta)
 	if delta <= 0 {
 		return fmt.Errorf("size increase must be positive")
 	}
-	machineDeployment.scalingMutex.Lock()
-	defer machineDeployment.scalingMutex.Unlock()
-	size, err := machineDeployment.mcmManager.GetMachineDeploymentSize(machineDeployment)
+	ngImpl.scalingMutex.Lock()
+	defer ngImpl.scalingMutex.Unlock()
+	size, err := ngImpl.mcmManager.GetMachineDeploymentSize(ngImpl.Name)
 	if err != nil {
 		return err
 	}
 	targetSize := int(size) + delta
-	if targetSize > machineDeployment.MaxSize() {
-		return fmt.Errorf("size increase too large - desired:%d max:%d", targetSize, machineDeployment.MaxSize())
+	if targetSize > ngImpl.MaxSize() {
+		return fmt.Errorf("size increase too large - desired:%d max:%d", targetSize, ngImpl.MaxSize())
 	}
-	return machineDeployment.mcmManager.retry(func(ctx context.Context) (bool, error) {
-		return machineDeployment.mcmManager.SetMachineDeploymentSize(ctx, machineDeployment, int64(targetSize))
-	}, "MachineDeployment", "update", machineDeployment.Name)
+	return ngImpl.mcmManager.retry(func(ctx context.Context) (bool, error) {
+		return ngImpl.mcmManager.SetMachineDeploymentSize(ctx, ngImpl, int64(targetSize))
+	}, "MachineDeployment", "update", ngImpl.Name)
 }
 
 // DecreaseTargetSize decreases the target size of the node group. This function
@@ -337,39 +337,41 @@ func (machineDeployment *MachineDeployment) IncreaseSize(delta int) error {
 // request for new nodes that have not been yet fulfilled. Delta should be negative.
 // It is assumed that cloud provider will not delete the existing nodes if the size
 // when there is an option to just decrease the target.
-func (machineDeployment *MachineDeployment) DecreaseTargetSize(delta int) error {
-	klog.V(0).Infof("Received request to decrease target size of machine deployment %s by %d", machineDeployment.Name, delta)
+func (ngImpl *NodeGroupImpl) DecreaseTargetSize(delta int) error {
+	klog.V(0).Infof("Received request to decrease target size of machine deployment %s by %d", ngImpl.Name, delta)
 	if delta >= 0 {
 		return fmt.Errorf("size decrease size must be negative")
 	}
-	machineDeployment.scalingMutex.Lock()
-	defer machineDeployment.scalingMutex.Unlock()
-	size, err := machineDeployment.mcmManager.GetMachineDeploymentSize(machineDeployment)
+	ngImpl.scalingMutex.Lock()
+	defer ngImpl.scalingMutex.Unlock()
+	size, err := ngImpl.mcmManager.GetMachineDeploymentSize(ngImpl.Name)
 	if err != nil {
 		return err
 	}
 	decreaseAmount := int(size) + delta
-	if decreaseAmount < machineDeployment.minSize {
-		klog.Warningf("Cannot go below min size= %d for machineDeployment %s, requested target size= %d . Setting target size to min size", machineDeployment.minSize, machineDeployment.Name, size+int64(delta))
-		decreaseAmount = machineDeployment.minSize
+	if decreaseAmount < ngImpl.minSize {
+		klog.Warningf("Cannot go below min size= %d for ngImpl %s, requested target size= %d . Setting target size to min size", ngImpl.minSize, ngImpl.Name, size+int64(delta))
+		decreaseAmount = ngImpl.minSize
 	}
-	return machineDeployment.mcmManager.retry(func(ctx context.Context) (bool, error) {
-		return machineDeployment.mcmManager.SetMachineDeploymentSize(ctx, machineDeployment, int64(decreaseAmount))
-	}, "MachineDeployment", "update", machineDeployment.Name)
+	return ngImpl.mcmManager.retry(func(ctx context.Context) (bool, error) {
+		return ngImpl.mcmManager.SetMachineDeploymentSize(ctx, ngImpl, int64(decreaseAmount))
+	}, "MachineDeployment", "update", ngImpl.Name)
 }
 
 // Refresh resets the priority annotation for the machines that are not present in machines-marked-by-ca-for-deletion annotation on the machineDeployment
-func (machineDeployment *MachineDeployment) Refresh() error {
-	machineDeployment.scalingMutex.Lock()
-	defer machineDeployment.scalingMutex.Unlock()
-	mcd, err := machineDeployment.mcmManager.GetMachineDeploymentResource(machineDeployment.Name)
+func (ngImpl *NodeGroupImpl) Refresh() error {
+	if !ngImpl.scalingMutex.TryLock() {
+		return fmt.Errorf("cannot Refresh() since scalingMutex currently acquired for %q", ngImpl.Name)
+	}
+	defer ngImpl.scalingMutex.Unlock()
+	mcd, err := ngImpl.mcmManager.GetMachineDeploymentObject(ngImpl.Name)
 	if err != nil {
 		return err
 	}
 	markedMachineNames := getMachineNamesMarkedByCAForDeletion(mcd)
-	machines, err := machineDeployment.mcmManager.getMachinesForMachineDeployment(machineDeployment.Name)
+	machines, err := ngImpl.mcmManager.getMachinesForMachineDeployment(ngImpl.Name)
 	if err != nil {
-		klog.Errorf("[Refresh] failed to get machines for machine deployment %s, hence skipping it. Err: %v", machineDeployment.Name, err.Error())
+		klog.Errorf("[Refresh] failed to get machines for machine deployment %s, hence skipping it. Err: %v", ngImpl.Name, err.Error())
 		return err
 	}
 	// update the machines-marked-by-ca-for-deletion annotation with the machines that are still marked for deletion by CA.
@@ -387,11 +389,11 @@ func (machineDeployment *MachineDeployment) Refresh() error {
 		clone.Annotations = map[string]string{}
 	}
 	updatedMachinesMarkedByCAForDeletionAnnotationVal := createMachinesMarkedForDeletionAnnotationValue(updatedMarkedMachineNames)
-	if clone.Annotations[machinesMarkedByCAForDeletion] != updatedMachinesMarkedByCAForDeletionAnnotationVal {
-		clone.Annotations[machinesMarkedByCAForDeletion] = updatedMachinesMarkedByCAForDeletionAnnotationVal
-		ctx, cancelFn := context.WithTimeout(context.Background(), machineDeployment.mcmManager.maxRetryTimeout)
+	if clone.Annotations[machinesMarkedByCAForDeletionAnnotation] != updatedMachinesMarkedByCAForDeletionAnnotationVal {
+		clone.Annotations[machinesMarkedByCAForDeletionAnnotation] = updatedMachinesMarkedByCAForDeletionAnnotationVal
+		ctx, cancelFn := context.WithTimeout(context.Background(), ngImpl.mcmManager.maxRetryTimeout)
 		defer cancelFn()
-		_, err = machineDeployment.mcmManager.machineClient.MachineDeployments(machineDeployment.Namespace).Update(ctx, clone, metav1.UpdateOptions{})
+		_, err = ngImpl.mcmManager.machineClient.MachineDeployments(ngImpl.Namespace).Update(ctx, clone, metav1.UpdateOptions{})
 		if err != nil {
 			return err
 		}
@@ -409,24 +411,24 @@ func (machineDeployment *MachineDeployment) Refresh() error {
 			incorrectlyMarkedMachines = append(incorrectlyMarkedMachines, machine.Name)
 		}
 	}
-	return machineDeployment.mcmManager.resetPriorityForMachines(incorrectlyMarkedMachines)
+	return ngImpl.mcmManager.resetPriorityForMachines(incorrectlyMarkedMachines)
 }
 
 // Belongs returns true if the given node belongs to the NodeGroup.
 // TODO: Implement this to iterate over machines under machinedeployment, and return true if node exists in list.
-func (machineDeployment *MachineDeployment) Belongs(node *apiv1.Node) (bool, error) {
-	ref, err := ReferenceFromProviderID(machineDeployment.mcmManager, node.Spec.ProviderID)
+func (ngImpl *NodeGroupImpl) Belongs(node *apiv1.Node) (bool, error) {
+	ref, err := ReferenceFromProviderID(ngImpl.mcmManager, node.Spec.ProviderID)
 	if err != nil {
 		return false, err
 	}
-	targetMd, err := machineDeployment.mcmManager.GetMachineDeploymentForMachine(ref)
+	targetMd, err := ngImpl.mcmManager.GetNodeGroupImpl(ref)
 	if err != nil {
 		return false, err
 	}
 	if targetMd == nil {
 		return false, fmt.Errorf("%s doesn't belong to a known MachinDeployment", node.Name)
 	}
-	if targetMd.Id() != machineDeployment.Id() {
+	if targetMd.Id() != ngImpl.Id() {
 		return false, nil
 	}
 	return true, nil
@@ -434,31 +436,31 @@ func (machineDeployment *MachineDeployment) Belongs(node *apiv1.Node) (bool, err
 
 // DeleteNodes deletes the nodes from the group. It is expected that this method will not be called
 // for nodes which are not part of ANY machine deployment.
-func (machineDeployment *MachineDeployment) DeleteNodes(nodes []*apiv1.Node) error {
+func (ngImpl *NodeGroupImpl) DeleteNodes(nodes []*apiv1.Node) error {
 	nodeNames := getNodeNames(nodes)
 	klog.V(0).Infof("Received request to delete nodes:- %v", nodeNames)
-	size, err := machineDeployment.mcmManager.GetMachineDeploymentSize(machineDeployment)
+	size, err := ngImpl.mcmManager.GetMachineDeploymentSize(ngImpl.Name)
 	if err != nil {
 		return err
 	}
-	if int(size) <= machineDeployment.MinSize() {
+	if int(size) <= ngImpl.MinSize() {
 		return fmt.Errorf("min size reached, nodes will not be deleted")
 	}
 	machines := make([]*types.NamespacedName, 0, len(nodes))
 	for _, node := range nodes {
-		belongs, err := machineDeployment.Belongs(node)
+		belongs, err := ngImpl.Belongs(node)
 		if err != nil {
 			return err
 		} else if !belongs {
-			return fmt.Errorf("%s belongs to a different machinedeployment than %s", node.Name, machineDeployment.Id())
+			return fmt.Errorf("%s belongs to a different machinedeployment than %s", node.Name, ngImpl.Id())
 		}
-		ref, err := ReferenceFromProviderID(machineDeployment.mcmManager, node.Spec.ProviderID)
+		ref, err := ReferenceFromProviderID(ngImpl.mcmManager, node.Spec.ProviderID)
 		if err != nil {
 			return fmt.Errorf("couldn't find the machine-name from provider-id %s", node.Spec.ProviderID)
 		}
 		machines = append(machines, ref)
 	}
-	return machineDeployment.mcmManager.DeleteMachines(machines)
+	return ngImpl.mcmManager.DeleteMachines(machines)
 }
 
 func getNodeNames(nodes []*apiv1.Node) interface{} {
@@ -470,20 +472,20 @@ func getNodeNames(nodes []*apiv1.Node) interface{} {
 }
 
 // Id returns machinedeployment id.
-func (machineDeployment *MachineDeployment) Id() string {
-	return machineDeployment.Name
+func (ngImpl *NodeGroupImpl) Id() string {
+	return ngImpl.Name
 }
 
 // Debug returns a debug string for the Asg.
-func (machineDeployment *MachineDeployment) Debug() string {
-	return fmt.Sprintf("%s (%d:%d)", machineDeployment.Id(), machineDeployment.MinSize(), machineDeployment.MaxSize())
+func (ngImpl *NodeGroupImpl) Debug() string {
+	return fmt.Sprintf("%s (%d:%d)", ngImpl.Id(), ngImpl.MinSize(), ngImpl.MaxSize())
 }
 
 // Nodes returns a list of all nodes that belong to this node group.
-func (machineDeployment *MachineDeployment) Nodes() ([]cloudprovider.Instance, error) {
-	instances, err := machineDeployment.mcmManager.GetInstancesForMachineDeployment(machineDeployment)
+func (ngImpl *NodeGroupImpl) Nodes() ([]cloudprovider.Instance, error) {
+	instances, err := ngImpl.mcmManager.GetInstancesForMachineDeployment(ngImpl.Name)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get the cloudprovider.Instance for machines backed by the machinedeployment %q, error: %v", machineDeployment.Name, err)
+		return nil, fmt.Errorf("failed to get the cloudprovider.Instance for machines backed by the machinedeployment %q, error: %v", ngImpl.Name, err)
 	}
 	erroneousInstanceInfos := make([]string, 0, len(instances))
 	for _, instance := range instances {
@@ -500,9 +502,9 @@ func (machineDeployment *MachineDeployment) Nodes() ([]cloudprovider.Instance, e
 // GetOptions returns NodeGroupAutoscalingOptions that should be used for this particular
 // NodeGroup. Returning a nil will result in using default options.
 // Implementation optional.
-func (machineDeployment *MachineDeployment) GetOptions(defaults config.NodeGroupAutoscalingOptions) (*config.NodeGroupAutoscalingOptions, error) {
+func (ngImpl *NodeGroupImpl) GetOptions(defaults config.NodeGroupAutoscalingOptions) (*config.NodeGroupAutoscalingOptions, error) {
 	options := defaults
-	mcdAnnotations, err := machineDeployment.mcmManager.GetMachineDeploymentAnnotations(machineDeployment.Name)
+	mcdAnnotations, err := ngImpl.mcmManager.GetMachineDeploymentAnnotations(ngImpl.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -536,32 +538,32 @@ func (machineDeployment *MachineDeployment) GetOptions(defaults config.NodeGroup
 }
 
 // TemplateNodeInfo returns a node template for this node group.
-func (machineDeployment *MachineDeployment) TemplateNodeInfo() (*schedulerframework.NodeInfo, error) {
+func (ngImpl *NodeGroupImpl) TemplateNodeInfo() (*schedulerframework.NodeInfo, error) {
 
-	nodeTemplate, err := machineDeployment.mcmManager.GetMachineDeploymentNodeTemplate(machineDeployment)
+	nodeTemplate, err := ngImpl.mcmManager.GetMachineDeploymentNodeTemplate(ngImpl.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	node, err := machineDeployment.mcmManager.buildNodeFromTemplate(machineDeployment.Name, nodeTemplate)
+	node, err := ngImpl.mcmManager.buildNodeFromTemplate(ngImpl.Name, nodeTemplate)
 	if err != nil {
 		return nil, err
 	}
 
-	nodeInfo := schedulerframework.NewNodeInfo(cloudprovider.BuildKubeProxy(machineDeployment.Name))
+	nodeInfo := schedulerframework.NewNodeInfo(cloudprovider.BuildKubeProxy(ngImpl.Name))
 	nodeInfo.SetNode(node)
 	return nodeInfo, nil
 }
 
 // AtomicIncreaseSize is not implemented.
-func (machineDeployment *MachineDeployment) AtomicIncreaseSize(delta int) error {
+func (ngImpl *NodeGroupImpl) AtomicIncreaseSize(delta int) error {
 	return cloudprovider.ErrNotImplemented
 }
 
 // getMachineNamesMarkedByCAForDeletion returns the set of machine names marked by CA for deletion.
 func getMachineNamesMarkedByCAForDeletion(mcd *v1alpha1.MachineDeployment) []string {
-	if mcd.Annotations == nil || mcd.Annotations[machinesMarkedByCAForDeletion] == "" {
+	if mcd.Annotations == nil || mcd.Annotations[machinesMarkedByCAForDeletionAnnotation] == "" {
 		return make([]string, 0)
 	}
-	return strings.Split(mcd.Annotations[machinesMarkedByCAForDeletion], ",")
+	return strings.Split(mcd.Annotations[machinesMarkedByCAForDeletionAnnotation], ",")
 }

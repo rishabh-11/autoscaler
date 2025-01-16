@@ -100,9 +100,9 @@ const (
 	machineDeploymentPausedReason = "DeploymentPaused"
 	// machineDeploymentNameLabel key for Machine Deployment name in machine labels
 	machineDeploymentNameLabel = "name"
-	// machinesMarkedByCAForDeletion is the annotation set by CA on machine deployment. Its value denotes the machines that
+	// machinesMarkedByCAForDeletionAnnotation is the annotation set by CA on machine deployment. Its value denotes the machines that
 	// CA marked for deletion by updating the priority annotation to 1 and scaling down the machine deployment.
-	machinesMarkedByCAForDeletion = "cluster-autoscaler.kubernetes.io/machines-marked-by-ca-for-deletion"
+	machinesMarkedByCAForDeletionAnnotation = "cluster-autoscaler.kubernetes.io/machines-marked-by-ca-for-deletion"
 )
 
 var (
@@ -129,7 +129,7 @@ type McmManager struct {
 	namespace               string
 	interrupt               chan struct{}
 	discoveryOpts           cloudprovider.NodeGroupDiscoveryOptions
-	machineDeployments      map[types.NamespacedName]*MachineDeployment
+	nodeGroups              map[types.NamespacedName]*NodeGroupImpl
 	deploymentLister        v1appslister.DeploymentLister
 	machineClient           machineapi.MachineV1alpha1Interface
 	machineDeploymentLister machinelisters.MachineDeploymentLister
@@ -255,7 +255,7 @@ func createMCMManagerInternal(discoveryOpts cloudprovider.NodeGroupDiscoveryOpti
 		m := &McmManager{
 			namespace:               namespace,
 			interrupt:               make(chan struct{}),
-			machineDeployments:      make(map[types.NamespacedName]*MachineDeployment),
+			nodeGroups:              make(map[types.NamespacedName]*NodeGroupImpl),
 			deploymentLister:        deploymentLister,
 			machineClient:           controlMachineClient,
 			machineClassLister:      machineClassLister,
@@ -305,18 +305,13 @@ func (m *McmManager) generateMachineDeploymentMap() error {
 // addNodeGroup adds node group defined in string spec. Format:
 // minNodes:maxNodes:namespace.machineDeploymentName
 func (m *McmManager) addNodeGroup(spec string) error {
-	machineDeployment, err := buildMachineDeploymentFromSpec(spec, m)
+	nodeGroup, err := buildNodeGroupImplFromSpec(spec, m)
 	if err != nil {
 		return err
 	}
-	m.addMachineDeployment(machineDeployment)
+	key := types.NamespacedName{Namespace: nodeGroup.Namespace, Name: nodeGroup.Name}
+	m.nodeGroups[key] = nodeGroup
 	return nil
-}
-
-func (m *McmManager) addMachineDeployment(machineDeployment *MachineDeployment) {
-	key := types.NamespacedName{Namespace: machineDeployment.Namespace, Name: machineDeployment.Name}
-	m.machineDeployments[key] = machineDeployment
-	return
 }
 
 // TODO: In general, any controller checking this needs to be dynamic so
@@ -378,11 +373,11 @@ func CreateMcmManager(discoveryOpts cloudprovider.NodeGroupDiscoveryOptions) (*M
 	return createMCMManagerInternal(discoveryOpts, defaultRetryInterval, defaultMaxRetryTimeout)
 }
 
-// GetMachineDeploymentForMachine returns the MachineDeployment for the Machine object.
-func (m *McmManager) GetMachineDeploymentForMachine(machine *types.NamespacedName) (*MachineDeployment, error) {
+// GetNodeGroupImpl returns the NodeGroupImpl for the given fully-qualified machine name.
+func (m *McmManager) GetNodeGroupImpl(machine *types.NamespacedName) (*NodeGroupImpl, error) {
 	if machine.Name == "" {
 		// Considering the possibility when Machine has been deleted but due to cached Node object it appears here.
-		return nil, fmt.Errorf("Node does not Exists")
+		return nil, fmt.Errorf("node does not Exists")
 	}
 
 	machineObject, err := m.machineLister.Machines(m.namespace).Get(machine.Name)
@@ -413,7 +408,7 @@ func (m *McmManager) GetMachineDeploymentForMachine(machine *types.NamespacedNam
 		return nil, fmt.Errorf("unable to find parent MachineDeployment of given MachineSet object %s %v", machineSetName, err)
 	}
 
-	machineDeployment, ok := m.machineDeployments[types.NamespacedName{Namespace: m.namespace, Name: machineDeploymentName}]
+	machineDeployment, ok := m.nodeGroups[types.NamespacedName{Namespace: m.namespace, Name: machineDeploymentName}]
 	if !ok {
 		return nil, fmt.Errorf("machineDeployment %s not found in the list of machine deployments", machineDeploymentName)
 	}
@@ -424,8 +419,8 @@ func (m *McmManager) GetMachineDeploymentForMachine(machine *types.NamespacedNam
 // It will select the machines to reset the priority based on the descending order of creation timestamp.
 func (m *McmManager) Refresh() error {
 	var collectiveError []error
-	for _, machineDeployment := range m.machineDeployments {
-		collectiveError = append(collectiveError, machineDeployment.Refresh())
+	for _, nodeGroup := range m.nodeGroups {
+		collectiveError = append(collectiveError, nodeGroup.Refresh())
 	}
 	return errors.Join(collectiveError...)
 }
@@ -436,18 +431,18 @@ func (m *McmManager) Cleanup() {
 	return
 }
 
-// GetMachineDeploymentSize returns the replicas field of the MachineDeployment
-func (m *McmManager) GetMachineDeploymentSize(machinedeployment *MachineDeployment) (int64, error) {
-	md, err := m.GetMachineDeploymentResource(machinedeployment.Name)
+// GetMachineDeploymentSize returns the replicas field of the MachineDeployment corresponding to the given node group.
+func (m *McmManager) GetMachineDeploymentSize(nodeGroupName string) (int64, error) {
+	md, err := m.GetMachineDeploymentObject(nodeGroupName)
 	if err != nil {
 		return 0, err
 	}
 	return int64(md.Spec.Replicas), nil
 }
 
-// SetMachineDeploymentSize sets the desired size for the Machinedeployment.
-func (m *McmManager) SetMachineDeploymentSize(ctx context.Context, machinedeployment *MachineDeployment, size int64) (bool, error) {
-	md, err := m.GetMachineDeploymentResource(machinedeployment.Name)
+// SetMachineDeploymentSize sets the desired size for the backing MachineDeployment of the given nodeGroup.
+func (m *McmManager) SetMachineDeploymentSize(ctx context.Context, nodeGroup *NodeGroupImpl, size int64) (bool, error) {
+	md, err := m.GetMachineDeploymentObject(nodeGroup.Name)
 	if err != nil {
 		return true, err
 	}
@@ -458,29 +453,29 @@ func (m *McmManager) SetMachineDeploymentSize(ctx context.Context, machinedeploy
 	clone := md.DeepCopy()
 	clone.Spec.Replicas = int32(size)
 
-	_, err = m.machineClient.MachineDeployments(machinedeployment.Namespace).Update(ctx, clone, metav1.UpdateOptions{})
+	_, err = m.machineClient.MachineDeployments(nodeGroup.Namespace).Update(ctx, clone, metav1.UpdateOptions{})
 	return true, err
 }
 
-// DeleteMachines annotates the target machines and also reduces the desired replicas of the MachineDeployment.
+// DeleteMachines annotates the target machines and also reduces the desired replicas of the corresponding MachineDeployment.
 func (m *McmManager) DeleteMachines(targetMachineRefs []*types.NamespacedName) error {
 	if len(targetMachineRefs) == 0 {
 		return nil
 	}
-	commonMachineDeployment, err := m.GetMachineDeploymentForMachine(targetMachineRefs[0])
+	commonNodeGroup, err := m.GetNodeGroupImpl(targetMachineRefs[0])
 	if err != nil {
 		return err
 	}
 	// acquire the mutex
-	commonMachineDeployment.scalingMutex.Lock()
-	defer commonMachineDeployment.scalingMutex.Unlock()
+	commonNodeGroup.scalingMutex.Lock()
+	defer commonNodeGroup.scalingMutex.Unlock()
 	// get the machine deployment and return if rolling update is not finished
-	md, err := m.GetMachineDeploymentResource(commonMachineDeployment.Name)
+	md, err := m.GetMachineDeploymentObject(commonNodeGroup.Name)
 	if err != nil {
 		return err
 	}
 	if !isRollingUpdateFinished(md) {
-		return fmt.Errorf("MachineDeployment %s is under rolling update , cannot reduce replica count", commonMachineDeployment.Name)
+		return fmt.Errorf("MachineDeployment %s is under rolling update , cannot reduce replica count", commonNodeGroup.Name)
 	}
 	machineNamesMarkedByCA := getMachineNamesMarkedByCAForDeletion(md)
 	// update priorities of machines to be deleted except the ones already in termination to 1
@@ -491,10 +486,10 @@ func (m *McmManager) DeleteMachines(targetMachineRefs []*types.NamespacedName) e
 	machineNamesMarkedByCA = append(machineNamesMarkedByCA, machineNamesWithPrio1...)
 	// Trying to update the machineDeployment till the deadline
 	err = m.retry(func(ctx context.Context) (bool, error) {
-		return m.scaleDownAndAnnotateMachineDeployment(ctx, commonMachineDeployment.Name, len(machineNamesWithPrio1), createMachinesMarkedForDeletionAnnotationValue(machineNamesMarkedByCA))
-	}, "MachineDeployment", "update", commonMachineDeployment.Name)
+		return m.scaleDownAndAnnotateMachineDeployment(ctx, commonNodeGroup.Name, len(machineNamesWithPrio1), createMachinesMarkedForDeletionAnnotationValue(machineNamesMarkedByCA))
+	}, "MachineDeployment", "update", commonNodeGroup.Name)
 	if err != nil {
-		klog.Errorf("unable to scale in machine deployment %s, will reset priority of target machines, Error: %v", commonMachineDeployment.Name, err)
+		klog.Errorf("unable to scale in machine deployment %s, will reset priority of target machines, Error: %v", commonNodeGroup.Name, err)
 		return errors.Join(err, m.resetPriorityForMachines(machineNamesWithPrio1))
 	}
 	return err
@@ -592,8 +587,9 @@ func (m *McmManager) updateAnnotationOnMachine(ctx context.Context, mcName strin
 
 // scaleDownAndAnnotateMachineDeployment scales down the machine deployment by the provided scaleDownAmount and returns the updated spec.Replicas after scale down.
 // It also updates the machines-marked-by-ca-for-deletion annotation on the machine deployment with the list of existing machines marked for deletion.
+// NOTE: Callers are expected to take the NodeGroup scalingMutex before invoking this method.
 func (m *McmManager) scaleDownAndAnnotateMachineDeployment(ctx context.Context, mdName string, scaleDownAmount int, markedMachines string) (bool, error) {
-	md, err := m.GetMachineDeploymentResource(mdName)
+	md, err := m.GetMachineDeploymentObject(mdName)
 	if err != nil {
 		return true, err
 	}
@@ -610,7 +606,7 @@ func (m *McmManager) scaleDownAndAnnotateMachineDeployment(ctx context.Context, 
 	if mdclone.Annotations == nil {
 		mdclone.Annotations = make(map[string]string)
 	}
-	mdclone.Annotations[machinesMarkedByCAForDeletion] = markedMachines
+	mdclone.Annotations[machinesMarkedByCAForDeletionAnnotation] = markedMachines
 	_, err = m.machineClient.MachineDeployments(mdclone.Namespace).Update(ctx, mdclone, metav1.UpdateOptions{})
 	if err != nil {
 		return true, fmt.Errorf("unable to scale in machine deployment %s, Error: %w", mdName, err)
@@ -644,10 +640,10 @@ func (m *McmManager) retry(fn func(ctx context.Context) (bool, error), resourceT
 	}
 }
 
-// GetInstancesForMachineDeployment returns list of cloudprovider.Instance for machines which belongs to the MachineDeployment.
-func (m *McmManager) GetInstancesForMachineDeployment(machinedeployment *MachineDeployment) ([]cloudprovider.Instance, error) {
+// GetInstancesForMachineDeployment returns list of cloudprovider.Instance for machines with the given nodeGroupName.
+func (m *McmManager) GetInstancesForMachineDeployment(nodeGroupName string) ([]cloudprovider.Instance, error) {
 	var (
-		list     = []string{machinedeployment.Name}
+		list     = []string{nodeGroupName}
 		selector = labels.NewSelector()
 		req, _   = labels.NewRequirement("name", selection.Equals, list)
 	)
@@ -655,7 +651,7 @@ func (m *McmManager) GetInstancesForMachineDeployment(machinedeployment *Machine
 	selector = selector.Add(*req)
 	machineList, err := m.machineLister.Machines(m.namespace).List(selector)
 	if err != nil {
-		return nil, fmt.Errorf("unable to fetch list of Machine objects %v for machinedeployment %q", err, machinedeployment.Name)
+		return nil, fmt.Errorf("unable to fetch list of Machine objects %v for MachineDeployment %q", err, nodeGroupName)
 	}
 
 	nodeList, err := m.nodeLister.List(labels.Everything())
@@ -741,7 +737,7 @@ func validateNodeTemplate(nodeTemplateAttributes *v1alpha1.NodeTemplate) error {
 
 // GetMachineDeploymentAnnotations returns the annotations present on the machine deployment for the provided machine deployment name
 func (m *McmManager) GetMachineDeploymentAnnotations(machineDeploymentName string) (map[string]string, error) {
-	md, err := m.GetMachineDeploymentResource(machineDeploymentName)
+	md, err := m.GetMachineDeploymentObject(machineDeploymentName)
 	if err != nil {
 		return nil, err
 	}
@@ -750,8 +746,8 @@ func (m *McmManager) GetMachineDeploymentAnnotations(machineDeploymentName strin
 
 // GetMachineDeploymentNodeTemplate returns the NodeTemplate of a node belonging to the same worker pool as the machinedeployment
 // If no node present then it forms the nodeTemplate using the one present in machineClass
-func (m *McmManager) GetMachineDeploymentNodeTemplate(machinedeployment *MachineDeployment) (*nodeTemplate, error) {
-	md, err := m.GetMachineDeploymentResource(machinedeployment.Name)
+func (m *McmManager) GetMachineDeploymentNodeTemplate(nodeGroupName string) (*nodeTemplate, error) {
+	md, err := m.GetMachineDeploymentObject(nodeGroupName)
 	if err != nil {
 		return nil, err
 	}
@@ -829,12 +825,12 @@ func (m *McmManager) GetMachineDeploymentNodeTemplate(machinedeployment *Machine
 			var providerSpec *awsapis.AWSProviderSpec
 			err = json.Unmarshal(mc.ProviderSpec.Raw, &providerSpec)
 			if err != nil {
-				return nil, fmt.Errorf("Unable to convert from %s to %s for %s, Error: %v", kindMachineClass, providerAWS, machinedeployment.Name, err)
+				return nil, fmt.Errorf("unable to convert from %s to %s for %s, Error: %v", kindMachineClass, providerAWS, nodeGroupName, err)
 			}
 
 			awsInstance, exists := AWSInstanceTypes[providerSpec.MachineType]
 			if !exists {
-				return nil, fmt.Errorf("Unable to fetch details for VM type %s", providerSpec.MachineType)
+				return nil, fmt.Errorf("unable to fetch details for VM type %s", providerSpec.MachineType)
 			}
 			instance = instanceType{
 				InstanceType: awsInstance.InstanceType,
@@ -851,11 +847,11 @@ func (m *McmManager) GetMachineDeploymentNodeTemplate(machinedeployment *Machine
 			var providerSpec *azureapis.AzureProviderSpec
 			err = json.Unmarshal(mc.ProviderSpec.Raw, &providerSpec)
 			if err != nil {
-				return nil, fmt.Errorf("Unable to convert from %s to %s for %s, Error: %v", kindMachineClass, providerAzure, machinedeployment.Name, err)
+				return nil, fmt.Errorf("unable to convert from %s to %s for %s, Error: %v", kindMachineClass, providerAzure, nodeGroupName, err)
 			}
 			azureInstance, exists := AzureInstanceTypes[providerSpec.Properties.HardwareProfile.VMSize]
 			if !exists {
-				return nil, fmt.Errorf("Unable to fetch details for VM type %s", providerSpec.Properties.HardwareProfile.VMSize)
+				return nil, fmt.Errorf("unable to fetch details for VM type %s", providerSpec.Properties.HardwareProfile.VMSize)
 			}
 			instance = instanceType{
 				InstanceType: azureInstance.InstanceType,
@@ -899,12 +895,12 @@ func (m *McmManager) GetMachineDeploymentNodeTemplate(machinedeployment *Machine
 	return nodeTmpl, nil
 }
 
-// GetMachineDeploymentResource returns the MachineDeployment object for the provided machine deployment name
-func (m *McmManager) GetMachineDeploymentResource(mdName string) (*v1alpha1.MachineDeployment, error) {
+// GetMachineDeploymentObject returns the MachineDeployment object for the provided machine deployment name
+func (m *McmManager) GetMachineDeploymentObject(mdName string) (*v1alpha1.MachineDeployment, error) {
 	md, err := m.machineDeploymentLister.MachineDeployments(m.namespace).Get(mdName)
 	if err != nil {
-		klog.Errorf("unable to fetch MachineDeployment object %s, Error: %v", mdName, err)
-		return nil, fmt.Errorf("unable to fetch MachineDeployment object %s, Error: %v", mdName, err)
+		klog.Errorf("unable to fetch MachineDeployments object %s, Error: %v", mdName, err)
+		return nil, fmt.Errorf("unable to fetch MachineDeployments object %s, Error: %v", mdName, err)
 	}
 	return md, nil
 }
@@ -1051,19 +1047,19 @@ func buildGenericLabels(template *nodeTemplate, nodeName string) map[string]stri
 	return result
 }
 
-func buildMachineDeploymentFromSpec(value string, mcmManager *McmManager) (*MachineDeployment, error) {
+func buildNodeGroupImplFromSpec(value string, mcmManager *McmManager) (*NodeGroupImpl, error) {
 	spec, err := dynamic.SpecFromString(value, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse node group spec: %v", err)
 	}
 	s := strings.Split(spec.Name, ".")
 	Namespace, Name := s[0], s[1]
-	machinedeployment := buildMachineDeployment(mcmManager, spec.MinSize, spec.MaxSize, Namespace, Name)
-	return machinedeployment, nil
+	nodeGroup := buildNodeGroupImpl(mcmManager, spec.MinSize, spec.MaxSize, Namespace, Name)
+	return nodeGroup, nil
 }
 
-func buildMachineDeployment(mcmManager *McmManager, minSize int, maxSize int, namespace string, name string) *MachineDeployment {
-	return &MachineDeployment{
+func buildNodeGroupImpl(mcmManager *McmManager, minSize int, maxSize int, namespace string, name string) *NodeGroupImpl {
+	return &NodeGroupImpl{
 		mcmManager:   mcmManager,
 		minSize:      minSize,
 		maxSize:      maxSize,
