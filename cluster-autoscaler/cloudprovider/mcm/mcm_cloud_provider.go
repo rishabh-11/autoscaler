@@ -437,6 +437,7 @@ func (ngImpl *NodeGroupImpl) deleteMachines(toDeleteMachineInfos []machineInfo) 
 	return nil
 }
 
+// AcquireScalingMutex acquires the scalingMutex associated with this NodeGroup and returns a function that releases the scalingMutex that is expected to be deferred by the caller.
 func (ngImpl *NodeGroupImpl) AcquireScalingMutex(operation string) (releaseFn func()) {
 	klog.V(3).Infof("%s is acquired scalingMutex for NodeGroup %q", operation, ngImpl.Name)
 	ngImpl.scalingMutex.Lock()
