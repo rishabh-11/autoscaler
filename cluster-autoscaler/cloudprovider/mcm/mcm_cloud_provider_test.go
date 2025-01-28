@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -157,7 +156,7 @@ func TestDeleteNodes(t *testing.T) {
 			},
 		},
 		{
-			"should not scale down when machine deployment update call times out and should reset priority of the corresponding machine",
+			"should not scale down when machine deployment update call times out",
 			setup{
 				nodes:              newNodes(2, "fakeID"),
 				machines:           newMachines(2, "fakeID", nil, "machinedeployment-1", "machineset-1", []string{"3", "3"}),
@@ -171,10 +170,11 @@ func TestDeleteNodes(t *testing.T) {
 				},
 			},
 			action{node: newNodes(1, "fakeID")[0]},
+			//return fmt.Errorf("for NodeGroup %q, cannot scale down due to: %v", ngImpl.Name, toDeleteMachineNames, err)
 			expect{
 				mdName:     "machinedeployment-1",
 				mdReplicas: 2,
-				err:        errors.Join(nil, fmt.Errorf("unable to scale in machine deployment machinedeployment-1, Error: %w", errors.New(mdUpdateErrorMsg))),
+				err:        fmt.Errorf("for NodeGroup %q, cannot scale down due to: %w", "machinedeployment-1", errors.New(mdUpdateErrorMsg)),
 			},
 		},
 		{
@@ -250,28 +250,6 @@ func TestDeleteNodes(t *testing.T) {
 			},
 		},
 		{
-			"no scale down of machine deployment if priority of the targeted machine cannot be updated to 1",
-			setup{
-				nodes:              newNodes(2, "fakeID"),
-				machines:           newMachines(2, "fakeID", nil, "machinedeployment-1", "machineset-1", []string{"3", "3"}),
-				machineSets:        newMachineSets(1, "machinedeployment-1"),
-				machineDeployments: newMachineDeployments(1, 2, nil, nil, nil),
-				nodeGroups:         []string{nodeGroup1},
-				controlMachineFakeResourceActions: &customfake.ResourceActions{
-					Machine: customfake.Actions{
-						Update: customfake.CreateFakeResponse(math.MaxInt32, mcUpdateErrorMsg, 0),
-					},
-				},
-			},
-			action{node: newNodes(1, "fakeID")[0]},
-			expect{
-				prio1Machines: nil,
-				mdName:        "machinedeployment-1",
-				mdReplicas:    2,
-				err:           fmt.Errorf("could not prioritize machine machine-1 for deletion, aborting scale in of machine deployment, Error: %s", mcUpdateErrorMsg),
-			},
-		},
-		{
 			"should not scale down machine deployment if the node belongs to another machine deployment",
 			setup{
 				nodes:              newNodes(2, "fakeID"),
@@ -285,7 +263,7 @@ func TestDeleteNodes(t *testing.T) {
 				prio1Machines: nil,
 				mdName:        "machinedeployment-2",
 				mdReplicas:    2,
-				err:           fmt.Errorf("node-1 belongs to a different machinedeployment than machinedeployment-1"),
+				err:           fmt.Errorf("node-1 belongs to a different MachineDeployment than %q", "machinedeployment-1"),
 			},
 		},
 	}
@@ -325,21 +303,6 @@ func TestDeleteNodes(t *testing.T) {
 			g.Expect(machineDeployment.Spec.Replicas).To(BeNumerically("==", entry.expect.mdReplicas))
 			g.Expect(machineDeployment.Annotations[machinesMarkedByCAForDeletionAnnotation]).To(Equal(entry.expect.machinesMarkedByCAAnnotationValue))
 
-			machines, err := m.machineClient.Machines(m.namespace).List(context.TODO(), metav1.ListOptions{
-				LabelSelector: metav1.FormatLabelSelector(&metav1.LabelSelector{
-					MatchLabels: map[string]string{"name": md.Name},
-				}),
-			})
-
-			for _, machine := range machines.Items {
-				if slices.ContainsFunc(entry.expect.prio1Machines, func(m *v1alpha1.Machine) bool {
-					return machine.Name == m.Name
-				}) {
-					g.Expect(machine.Annotations[machinePriorityAnnotation]).To(Equal(priorityValueForDeletionCandidateMachines))
-				} else {
-					g.Expect(machine.Annotations[machinePriorityAnnotation]).To(Equal(defaultPriorityValue))
-				}
-			}
 		})
 	}
 }
@@ -482,15 +445,6 @@ func TestRefresh(t *testing.T) {
 				g.Expect(err).To(Equal(entry.expect.err))
 			} else {
 				g.Expect(err).To(BeNil())
-			}
-			machines, err := m.machineClient.Machines(m.namespace).List(context.TODO(), metav1.ListOptions{})
-			g.Expect(err).To(BeNil())
-			for _, mc := range machines.Items {
-				if slices.Contains(entry.expect.prio3Machines, mc.Name) {
-					g.Expect(mc.Annotations[machinePriorityAnnotation]).To(Equal(defaultPriorityValue))
-				} else {
-					g.Expect(mc.Annotations[machinePriorityAnnotation]).To(Equal(priorityValueForDeletionCandidateMachines))
-				}
 			}
 		})
 	}

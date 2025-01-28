@@ -28,6 +28,7 @@ import (
 	"flag"
 	"fmt"
 	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/autoscaler/cluster-autoscaler/config/dynamic"
 	v1appslister "k8s.io/client-go/listers/apps/v1"
 	"k8s.io/utils/pointer"
@@ -64,6 +65,7 @@ import (
 	"k8s.io/client-go/discovery"
 	appsinformers "k8s.io/client-go/informers"
 	coreinformers "k8s.io/client-go/informers"
+	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
@@ -82,8 +84,6 @@ const (
 	// priorityValueForDeletionCandidateMachines is the priority annotation value set on machines that the CA wants to be deleted. Its value is set to 1.
 	priorityValueForDeletionCandidateMachines = "1"
 	minResyncPeriodDefault                    = 1 * time.Hour
-	// machinePriorityAnnotation is the annotation to set machine priority while deletion
-	machinePriorityAnnotation = "machinepriority.machine.sapcloud.io"
 	// kindMachineClass is the kind for generic machine class used by the OOT providers
 	kindMachineClass = "MachineClass"
 	// providerAWS is the provider type for AWS machine class objects
@@ -103,6 +103,8 @@ const (
 	// machinesMarkedByCAForDeletionAnnotation is the annotation set by CA on machine deployment. Its value denotes the machines that
 	// CA marked for deletion by updating the priority annotation to 1 and scaling down the machine deployment.
 	machinesMarkedByCAForDeletionAnnotation = "cluster-autoscaler.kubernetes.io/machines-marked-by-ca-for-deletion"
+	// poolNameLabel is the name of the label for gardener worker pool
+	poolNameLabel = "worker.gardener.cloud/pool"
 )
 
 var (
@@ -137,6 +139,7 @@ type McmManager struct {
 	machineLister           machinelisters.MachineLister
 	machineClassLister      machinelisters.MachineClassLister
 	nodeLister              corelisters.NodeLister
+	nodeInterface           corev1.NodeInterface
 	maxRetryTimeout         time.Duration
 	retryInterval           time.Duration
 }
@@ -243,8 +246,9 @@ func createMCMManagerInternal(discoveryOpts cloudprovider.NodeGroupDiscoveryOpti
 		targetCoreClientBuilder := ClientBuilder{
 			ClientConfig: targetKubeconfig,
 		}
+		targetCoreClient := targetCoreClientBuilder.ClientOrDie("target-core-shared-informers")
 		targetCoreInformerFactory := coreinformers.NewSharedInformerFactory(
-			targetCoreClientBuilder.ClientOrDie("target-core-shared-informers"),
+			targetCoreClient,
 			*minResyncPeriod,
 		)
 
@@ -263,6 +267,7 @@ func createMCMManagerInternal(discoveryOpts cloudprovider.NodeGroupDiscoveryOpti
 			machineSetLister:        machineSharedInformers.MachineSets().Lister(),
 			machineDeploymentLister: machineSharedInformers.MachineDeployments().Lister(),
 			nodeLister:              coreSharedInformers.Nodes().Lister(),
+			nodeInterface:           targetCoreClient.CoreV1().Nodes(),
 			discoveryOpts:           discoveryOpts,
 			maxRetryTimeout:         maxRetryTimeout,
 			retryInterval:           retryInterval,
@@ -374,43 +379,43 @@ func CreateMcmManager(discoveryOpts cloudprovider.NodeGroupDiscoveryOptions) (*M
 }
 
 // GetNodeGroupImpl returns the NodeGroupImpl for the given fully-qualified machine name.
-func (m *McmManager) GetNodeGroupImpl(machine *types.NamespacedName) (*NodeGroupImpl, error) {
-	if machine.Name == "" {
+func (m *McmManager) GetNodeGroupImpl(machineKey types.NamespacedName) (*NodeGroupImpl, error) {
+	if machineKey.Name == "" {
 		// Considering the possibility when Machine has been deleted but due to cached Node object it appears here.
 		return nil, fmt.Errorf("node does not Exists")
 	}
 
-	machineObject, err := m.machineLister.Machines(m.namespace).Get(machine.Name)
+	machineObject, err := m.machineLister.Machines(m.namespace).Get(machineKey.Name)
 	if err != nil {
 		if kube_errors.IsNotFound(err) {
 			// Machine has been removed.
 			klog.V(4).Infof("Machine was removed before it could be retrieved: %v", err)
 			return nil, nil
 		}
-		return nil, fmt.Errorf("Unable to fetch Machine object %s %v", machine.Name, err)
+		return nil, fmt.Errorf("unable to fetch Machine object for given Machine name %q due to %w", machineKey.Name, err)
 	}
 
 	var machineSetName, machineDeploymentName string
 	if len(machineObject.OwnerReferences) > 0 {
 		machineSetName = machineObject.OwnerReferences[0].Name
 	} else {
-		return nil, fmt.Errorf("Unable to find parent MachineSet of given Machine object %s %v", machine.Name, err)
+		return nil, fmt.Errorf("unable to find parent MachineSet for given Machine name %q due to: %w", machineKey.Name, err)
 	}
 
 	machineSetObject, err := m.machineSetLister.MachineSets(m.namespace).Get(machineSetName)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to fetch MachineSet object %s %v", machineSetName, err)
+		return nil, fmt.Errorf("unable to fetch MachineSet object for name %q due to: %w", machineSetName, err)
 	}
 
 	if len(machineSetObject.OwnerReferences) > 0 {
 		machineDeploymentName = machineSetObject.OwnerReferences[0].Name
 	} else {
-		return nil, fmt.Errorf("unable to find parent MachineDeployment of given MachineSet object %s %v", machineSetName, err)
+		return nil, fmt.Errorf("unable to find parent MachineDeployment of given MachineSet name %q due to: %w", machineSetName, err)
 	}
 
 	machineDeployment, ok := m.nodeGroups[types.NamespacedName{Namespace: m.namespace, Name: machineDeploymentName}]
 	if !ok {
-		return nil, fmt.Errorf("machineDeployment %s not found in the list of machine deployments", machineDeploymentName)
+		return nil, fmt.Errorf("could not find MachineDeployment %q in the managed nodeGroups", machineDeploymentName)
 	}
 	return machineDeployment, nil
 }
@@ -457,111 +462,6 @@ func (m *McmManager) SetMachineDeploymentSize(ctx context.Context, nodeGroup *No
 	return true, err
 }
 
-// DeleteMachines annotates the target machines and also reduces the desired replicas of the corresponding MachineDeployment.
-func (m *McmManager) DeleteMachines(targetMachineRefs []*types.NamespacedName) error {
-	if len(targetMachineRefs) == 0 {
-		return nil
-	}
-	commonNodeGroup, err := m.GetNodeGroupImpl(targetMachineRefs[0])
-	if err != nil {
-		return err
-	}
-	// acquire the mutex
-	commonNodeGroup.scalingMutex.Lock()
-	defer commonNodeGroup.scalingMutex.Unlock()
-	// get the machine deployment and return if rolling update is not finished
-	md, err := m.GetMachineDeploymentObject(commonNodeGroup.Name)
-	if err != nil {
-		return err
-	}
-	if !isRollingUpdateFinished(md) {
-		return fmt.Errorf("MachineDeployment %s is under rolling update , cannot reduce replica count", commonNodeGroup.Name)
-	}
-	machineNamesMarkedByCA := getMachineNamesMarkedByCAForDeletion(md)
-	// update priorities of machines to be deleted except the ones already in termination to 1
-	machineNamesWithPrio1, err := m.prioritizeMachinesForDeletion(targetMachineRefs)
-	if err != nil {
-		return err
-	}
-	machineNamesMarkedByCA = append(machineNamesMarkedByCA, machineNamesWithPrio1...)
-	// Trying to update the machineDeployment till the deadline
-	err = m.retry(func(ctx context.Context) (bool, error) {
-		return m.scaleDownAndAnnotateMachineDeployment(ctx, commonNodeGroup.Name, len(machineNamesWithPrio1), createMachinesMarkedForDeletionAnnotationValue(machineNamesMarkedByCA))
-	}, "MachineDeployment", "update", commonNodeGroup.Name)
-	if err != nil {
-		klog.Errorf("unable to scale in machine deployment %s, will reset priority of target machines, Error: %v", commonNodeGroup.Name, err)
-		return errors.Join(err, m.resetPriorityForMachines(machineNamesWithPrio1))
-	}
-	return err
-}
-
-// resetPriorityForMachines resets the priority of machines passed in the argument to defaultPriorityValue
-func (m *McmManager) resetPriorityForMachines(mcNames []string) error {
-	var collectiveError []error
-	for _, mcName := range mcNames {
-		machine, err := m.machineLister.Machines(m.namespace).Get(mcName)
-		if kube_errors.IsNotFound(err) {
-			klog.Warningf("Machine %s not found, skipping resetting priority annotation", mcName)
-			continue
-		}
-		if err != nil {
-			collectiveError = append(collectiveError, fmt.Errorf("unable to get Machine object %s, Error: %v", mcName, err))
-			continue
-		}
-		ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(defaultResetAnnotationTimeout))
-		err = func() error {
-			defer cancelFn()
-			val, ok := machine.Annotations[machinePriorityAnnotation]
-			if ok && val != defaultPriorityValue {
-				_, err = m.updateAnnotationOnMachine(ctx, machine.Name, machinePriorityAnnotation, defaultPriorityValue)
-				return err
-			}
-			return nil
-		}()
-		if err != nil {
-			collectiveError = append(collectiveError, fmt.Errorf("could not reset priority annotation on machine %s, Error: %v", machine.Name, err))
-			continue
-		}
-	}
-	return errors.Join(collectiveError...)
-}
-
-// prioritizeMachinesForDeletion prioritizes the targeted machines by updating their priority annotation to 1
-func (m *McmManager) prioritizeMachinesForDeletion(targetMachineRefs []*types.NamespacedName) ([]string, error) {
-	var expectedToTerminateMachineNodePairs = make(map[string]string)
-	var prio1MarkedMachineNames []string
-
-	for _, machineRef := range targetMachineRefs {
-		// Trying to update the priority of machineRef till m.maxRetryTimeout
-		if err := m.retry(func(ctx context.Context) (bool, error) {
-			mc, err := m.machineLister.Machines(m.namespace).Get(machineRef.Name)
-			if err != nil {
-				if kube_errors.IsNotFound(err) {
-					klog.Warningf("Machine %s not found, skipping prioritizing it for deletion", machineRef.Name)
-					return false, nil
-				}
-				klog.Errorf("Unable to fetch Machine object %s, Error: %v", machineRef.Name, err)
-				return true, err
-			}
-			if isMachineFailedOrTerminating(mc) {
-				return false, nil
-			}
-			if mc.Annotations[machinePriorityAnnotation] == priorityValueForDeletionCandidateMachines {
-				klog.Infof("Machine %q priority is already set to 1, hence skipping the update", mc.Name)
-				return false, nil
-			}
-			prio1MarkedMachineNames = append(prio1MarkedMachineNames, machineRef.Name)
-			expectedToTerminateMachineNodePairs[mc.Name] = mc.Labels["node"]
-			return m.updateAnnotationOnMachine(ctx, mc.Name, machinePriorityAnnotation, priorityValueForDeletionCandidateMachines)
-		}, "Machine", "update", machineRef.Name); err != nil {
-			klog.Errorf("could not prioritize machine %s for deletion, aborting scale in of machine deployment, Error: %v", machineRef.Name, err)
-			return nil, fmt.Errorf("could not prioritize machine %s for deletion, aborting scale in of machine deployment, Error: %v", machineRef.Name, err)
-		}
-	}
-	klog.V(2).Infof("Expected to remove following {machineRef: corresponding node} pairs %s", expectedToTerminateMachineNodePairs)
-	return prio1MarkedMachineNames, nil
-}
-
 // updateAnnotationOnMachine returns error only when updating the annotations on machine has been failing consequently and deadline is crossed
 func (m *McmManager) updateAnnotationOnMachine(ctx context.Context, mcName string, key, val string) (bool, error) {
 	machine, err := m.machineLister.Machines(m.namespace).Get(mcName)
@@ -585,33 +485,39 @@ func (m *McmManager) updateAnnotationOnMachine(ctx context.Context, mcName strin
 	return true, err
 }
 
-// scaleDownAndAnnotateMachineDeployment scales down the machine deployment by the provided scaleDownAmount and returns the updated spec.Replicas after scale down.
-// It also updates the machines-marked-by-ca-for-deletion annotation on the machine deployment with the list of existing machines marked for deletion.
-// NOTE: Callers are expected to take the NodeGroup scalingMutex before invoking this method.
-func (m *McmManager) scaleDownAndAnnotateMachineDeployment(ctx context.Context, mdName string, scaleDownAmount int, markedMachines string) (bool, error) {
+// scaleDownMachineDeployment scales down the MachineDeployment for given name by the length of toDeleteMachineNames
+// It also updates the machines-marked-by-ca-for-deletion annotation on the machine deployment with the list of toDeleteMachineNames
+// NOTE: Callers MUST take the NodeGroup scalingMutex before invoking this method.
+func (m *McmManager) scaleDownMachineDeployment(ctx context.Context, mdName string, toDeleteMachineNames []string) (bool, error) {
 	md, err := m.GetMachineDeploymentObject(mdName)
 	if err != nil {
 		return true, err
 	}
-	mdclone := md.DeepCopy()
-	expectedReplicas := mdclone.Spec.Replicas - int32(scaleDownAmount)
-	if expectedReplicas == mdclone.Spec.Replicas {
-		klog.Infof("MachineDeployment %q is already set to %d, skipping the update", mdclone.Name, expectedReplicas)
+
+	scaleDownAmount := len(toDeleteMachineNames)
+	expectedReplicas := md.Spec.Replicas - int32(scaleDownAmount)
+	if expectedReplicas == md.Spec.Replicas {
+		klog.Infof("MachineDeployment %q is already set to %d, skipping the update", md.Name, expectedReplicas)
 		return false, nil
 	} else if expectedReplicas < 0 {
-		klog.Errorf("Cannot delete machines in machine deployment %s, expected decrease in replicas %d is more than current replicas %d", mdName, scaleDownAmount, mdclone.Spec.Replicas)
-		return false, fmt.Errorf("cannot delete machines in machine deployment %s, expected decrease in replicas %d is more than current replicas %d", mdName, scaleDownAmount, mdclone.Spec.Replicas)
+		klog.Errorf("Cannot delete machines in MachineDeployment %s, expected decrease in replicas %d is more than current replicas %d", mdName, scaleDownAmount, md.Spec.Replicas)
+		return false, fmt.Errorf("cannot delete machines in MachineDeployment %s, expected decrease in replicas %d is more than current replicas %d", mdName, scaleDownAmount, md.Spec.Replicas)
 	}
-	mdclone.Spec.Replicas = expectedReplicas
-	if mdclone.Annotations == nil {
-		mdclone.Annotations = make(map[string]string)
+
+	mdCopy := md.DeepCopy()
+	mdCopy.Spec.Replicas = expectedReplicas
+	if mdCopy.Annotations == nil {
+		mdCopy.Annotations = make(map[string]string)
 	}
-	mdclone.Annotations[machinesMarkedByCAForDeletionAnnotation] = markedMachines
-	_, err = m.machineClient.MachineDeployments(mdclone.Namespace).Update(ctx, mdclone, metav1.UpdateOptions{})
+	alreadyMarkedMachineNames := getMachineNamesMarkedByCAForDeletion(md)
+	toMarkMachineNames := mergeStringSlicesUnique(alreadyMarkedMachineNames, toDeleteMachineNames)
+	markedAnnotValue := createMachinesMarkedForDeletionAnnotationValue(toMarkMachineNames)
+	mdCopy.Annotations[machinesMarkedByCAForDeletionAnnotation] = markedAnnotValue
+	_, err = m.machineClient.MachineDeployments(mdCopy.Namespace).Update(ctx, mdCopy, metav1.UpdateOptions{})
 	if err != nil {
-		return true, fmt.Errorf("unable to scale in machine deployment %s, Error: %w", mdName, err)
+		return true, err
 	}
-	klog.V(2).Infof("MachineDeployment %s size decreased to %d ", mdclone.Name, mdclone.Spec.Replicas)
+	klog.V(2).Infof("MachineDeployment %s size decreased to %d ", mdCopy.Name, mdCopy.Spec.Replicas)
 	return false, nil
 }
 
@@ -744,7 +650,7 @@ func (m *McmManager) GetMachineDeploymentAnnotations(machineDeploymentName strin
 	return md.Annotations, nil
 }
 
-// GetMachineDeploymentNodeTemplate returns the NodeTemplate of a node belonging to the same worker pool as the machinedeployment
+// GetMachineDeploymentNodeTemplate returns the NodeTemplate of a node belonging to the same worker pool as the MachineDeployment
 // If no node present then it forms the nodeTemplate using the one present in machineClass
 func (m *McmManager) GetMachineDeploymentNodeTemplate(nodeGroupName string) (*nodeTemplate, error) {
 	md, err := m.GetMachineDeploymentObject(nodeGroupName)
@@ -1019,6 +925,84 @@ func (m *McmManager) buildNodeFromTemplate(name string, template *nodeTemplate) 
 
 	node.Status.Conditions = cloudprovider.BuildReadyConditions()
 	return &node, nil
+}
+
+func (m *McmManager) cordonNodes(nodeNames []string) error {
+	if len(nodeNames) == 0 {
+		return nil
+	}
+	if m.nodeInterface == nil {
+		return nil
+	}
+	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(m.maxRetryTimeout))
+	defer cancelFn()
+	var errs []error
+	for _, nodeName := range nodeNames {
+		node, err := m.nodeLister.Get(nodeName)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if node.Spec.Unschedulable {
+			klog.V(4).Infof("Node %q is already cordoned", nodeName)
+			continue
+		}
+		adjustNode := node.DeepCopy()
+		adjustNode.Spec.Unschedulable = true
+		_, err = m.nodeInterface.Update(ctx, adjustNode, metav1.UpdateOptions{})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to cordon Node %q: %w", nodeName, err))
+		}
+		klog.V(3).Infof("Node %q has been cordoned successfully", nodeName)
+	}
+	if len(errs) > 0 {
+		return utilerrors.NewAggregate(errs)
+	}
+	return nil
+}
+
+type MachineInfo struct {
+	Key                 types.NamespacedName
+	NodeName            string
+	FailedOrTerminating bool
+}
+
+// GetMachineInfo extracts the machine Key from the given node's providerID if found and checks whether it is failed or terminating and returns the MachineInfo or an error
+func (m *McmManager) GetMachineInfo(node *apiv1.Node) (*MachineInfo, error) {
+	machines, err := m.machineLister.Machines(m.namespace).List(labels.Everything())
+	if err != nil {
+		return nil, fmt.Errorf("cannot list machines in namespace %q due to: %s", m.namespace, err)
+	}
+
+	providerID := node.Spec.ProviderID
+	var machineName, machineNamespace string
+	var isFailedOrTerminating bool
+	for _, machine := range machines {
+		machineID := strings.Split(machine.Spec.ProviderID, "/")
+		nodeID := strings.Split(node.Spec.ProviderID, "/")
+		// If registered, the ID will match the cloudprovider instance ID.
+		// If unregistered, the ID will match the machine name.
+		if machineID[len(machineID)-1] == nodeID[len(nodeID)-1] ||
+			nodeID[len(nodeID)-1] == machine.Name {
+			machineName = machine.Name
+			machineNamespace = machine.Namespace
+			isFailedOrTerminating = isMachineFailedOrTerminating(machine)
+			break
+		}
+	}
+
+	if machineName == "" {
+		klog.V(3).Infof("No Machine found for node providerID %q", providerID)
+		return nil, nil
+	}
+	return &MachineInfo{
+		Key: types.NamespacedName{
+			Name:      machineName,
+			Namespace: machineNamespace,
+		},
+		NodeName:            node.Name,
+		FailedOrTerminating: isFailedOrTerminating,
+	}, nil
 }
 
 func buildGenericLabels(template *nodeTemplate, nodeName string) map[string]string {
