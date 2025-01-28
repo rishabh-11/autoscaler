@@ -163,6 +163,12 @@ type nodeTemplate struct {
 	Taints       []apiv1.Taint
 }
 
+type machineInfo struct {
+	Key                 types.NamespacedName
+	NodeName            string
+	FailedOrTerminating bool
+}
+
 func init() {
 	controlBurst = flag.Int("control-apiserver-burst", rest.DefaultBurst, "Throttling burst configuration for the client to control cluster's apiserver.")
 	controlQPS = flag.Float64("control-apiserver-qps", float64(rest.DefaultQPS), "Throttling QPS configuration for the client to control cluster's apiserver.")
@@ -961,14 +967,8 @@ func (m *McmManager) cordonNodes(nodeNames []string) error {
 	return nil
 }
 
-type MachineInfo struct {
-	Key                 types.NamespacedName
-	NodeName            string
-	FailedOrTerminating bool
-}
-
 // GetMachineInfo extracts the machine Key from the given node's providerID if found and checks whether it is failed or terminating and returns the MachineInfo or an error
-func (m *McmManager) GetMachineInfo(node *apiv1.Node) (*MachineInfo, error) {
+func (m *McmManager) GetMachineInfo(node *apiv1.Node) (*machineInfo, error) {
 	machines, err := m.machineLister.Machines(m.namespace).List(labels.Everything())
 	if err != nil {
 		return nil, fmt.Errorf("cannot list machines in namespace %q due to: %s", m.namespace, err)
@@ -995,7 +995,7 @@ func (m *McmManager) GetMachineInfo(node *apiv1.Node) (*MachineInfo, error) {
 		klog.V(3).Infof("No Machine found for node providerID %q", providerID)
 		return nil, nil
 	}
-	return &MachineInfo{
+	return &machineInfo{
 		Key: types.NamespacedName{
 			Name:      machineName,
 			Namespace: machineNamespace,

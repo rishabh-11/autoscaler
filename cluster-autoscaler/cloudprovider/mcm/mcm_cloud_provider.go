@@ -352,12 +352,12 @@ func (ngImpl *NodeGroupImpl) Refresh() error {
 }
 
 // Belongs checks if the given node belongs to this NodeGroup and also returns its MachineInfo for its corresponding Machine
-func (ngImpl *NodeGroupImpl) Belongs(node *apiv1.Node) (belongs bool, machineInfo *MachineInfo, err error) {
-	machineInfo, err = ngImpl.mcmManager.GetMachineInfo(node)
-	if err != nil || machineInfo == nil {
+func (ngImpl *NodeGroupImpl) Belongs(node *apiv1.Node) (belongs bool, mInfo *machineInfo, err error) {
+	mInfo, err = ngImpl.mcmManager.GetMachineInfo(node)
+	if err != nil || mInfo == nil {
 		return
 	}
-	targetMd, err := ngImpl.mcmManager.GetNodeGroupImpl(machineInfo.Key)
+	targetMd, err := ngImpl.mcmManager.GetNodeGroupImpl(mInfo.Key)
 	if err != nil {
 		return
 	}
@@ -382,7 +382,7 @@ func (ngImpl *NodeGroupImpl) DeleteNodes(nodes []*apiv1.Node) error {
 	if int(size) <= ngImpl.MinSize() {
 		return fmt.Errorf("min size reached, nodes will not be deleted")
 	}
-	var toDeleteMachineInfos []MachineInfo
+	var toDeleteMachineInfos []machineInfo
 	for _, node := range nodes {
 		belongs, machineInfo, err := ngImpl.Belongs(node)
 		if err != nil {
@@ -400,7 +400,7 @@ func (ngImpl *NodeGroupImpl) DeleteNodes(nodes []*apiv1.Node) error {
 }
 
 // deleteMachines annotates the corresponding MachineDeployment with machine names of toDeleteMachineInfos, reduces the desired replicas of the corresponding MachineDeployment and cordons corresponding nodes belonging to toDeleteMachineInfos
-func (ngImpl *NodeGroupImpl) deleteMachines(toDeleteMachineInfos []MachineInfo) error {
+func (ngImpl *NodeGroupImpl) deleteMachines(toDeleteMachineInfos []machineInfo) error {
 	if len(toDeleteMachineInfos) == 0 {
 		return nil
 	}
