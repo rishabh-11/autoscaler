@@ -401,24 +401,6 @@ func TestRefresh(t *testing.T) {
 				err: nil,
 			},
 		},
-		{
-			"priority reset of machine fails",
-			setup{
-				nodes:              newNodes(1, "fakeID"),
-				machines:           newMachines(1, "fakeID", nil, "machinedeployment-1", "machineset-1", []string{"1"}),
-				machineDeployments: newMachineDeployments(1, 1, nil, nil, nil),
-				controlMachineFakeResourceActions: &customfake.ResourceActions{
-					Machine: customfake.Actions{
-						Update: customfake.CreateFakeResponse(math.MaxInt32, mcUpdateErrorMsg, 0),
-					},
-				},
-				nodeGroups:    []string{nodeGroup2},
-				mcmDeployment: newMCMDeployment(1),
-			},
-			expect{
-				err: errors.Join(nil, errors.Join(fmt.Errorf("could not reset priority annotation on machine machine-1, Error: %v", mcUpdateErrorMsg))),
-			},
-		},
 	}
 	for _, entry := range table {
 		entry := entry

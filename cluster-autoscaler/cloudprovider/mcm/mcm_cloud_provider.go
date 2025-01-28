@@ -25,7 +25,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
-	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -569,7 +568,10 @@ func mergeStringSlicesUnique(slice1, slice2 []string) []string {
 	for _, s := range slices.Concat(slice1, slice2) {
 		seen[s] = struct{}{}
 	}
-	concatenated := slices.Collect(maps.Keys(seen))
+	concatenated := make([]string, 0, len(seen)) // TODO: Change to slices.Collect(maps.Keys(seen)) from Go 1.23
+	for s := range seen {
+		concatenated = append(concatenated, s)
+	}
 	slices.Sort(concatenated)
 	return concatenated
 }
