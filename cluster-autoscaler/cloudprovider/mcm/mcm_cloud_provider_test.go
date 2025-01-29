@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/gardener/machine-controller-manager/pkg/util/provider/machineutils"
 	"math"
 	"strings"
 	"testing"
@@ -85,11 +86,11 @@ func TestDeleteNodes(t *testing.T) {
 		node *corev1.Node
 	}
 	type expect struct {
-		prio1Machines                     []*v1alpha1.Machine
-		mdName                            string
-		mdReplicas                        int32
-		machinesMarkedByCAAnnotationValue string
-		err                               error
+		prio1Machines                          []*v1alpha1.Machine
+		mdName                                 string
+		mdReplicas                             int32
+		machinesTriggerDeletionAnnotationValue string
+		err                                    error
 	}
 	type data struct {
 		name   string
@@ -109,11 +110,11 @@ func TestDeleteNodes(t *testing.T) {
 			},
 			action{node: newNodes(1, "fakeID")[0]},
 			expect{
-				prio1Machines:                     newMachines(1, "fakeID", nil, "machinedeployment-1", "machineset-1", []string{"1"}),
-				mdName:                            "machinedeployment-1",
-				machinesMarkedByCAAnnotationValue: createMachinesMarkedForDeletionAnnotationValue(generateNames("machine", 1)),
-				mdReplicas:                        1,
-				err:                               nil,
+				prio1Machines:                          newMachines(1, "fakeID", nil, "machinedeployment-1", "machineset-1", []string{"1"}),
+				mdName:                                 "machinedeployment-1",
+				machinesTriggerDeletionAnnotationValue: createMachinesTriggeredForDeletionAnnotValue(generateNames("machine", 1)),
+				mdReplicas:                             1,
+				err:                                    nil,
 			},
 		},
 		{
@@ -127,11 +128,11 @@ func TestDeleteNodes(t *testing.T) {
 			},
 			action{node: newNode("node-1", "requested://machine-1")},
 			expect{
-				prio1Machines:                     newMachines(1, "fakeID", nil, "machinedeployment-1", "machineset-1", []string{"1"}),
-				machinesMarkedByCAAnnotationValue: createMachinesMarkedForDeletionAnnotationValue(generateNames("machine", 1)),
-				mdName:                            "machinedeployment-1",
-				mdReplicas:                        0,
-				err:                               nil,
+				prio1Machines:                          newMachines(1, "fakeID", nil, "machinedeployment-1", "machineset-1", []string{"1"}),
+				machinesTriggerDeletionAnnotationValue: createMachinesTriggeredForDeletionAnnotValue(generateNames("machine", 1)),
+				mdName:                                 "machinedeployment-1",
+				mdReplicas:                             0,
+				err:                                    nil,
 			},
 		},
 		{
@@ -193,11 +194,11 @@ func TestDeleteNodes(t *testing.T) {
 			},
 			action{node: newNodes(1, "fakeID")[0]},
 			expect{
-				prio1Machines:                     newMachines(1, "fakeID", nil, "machinedeployment-1", "machineset-1", []string{"1"}),
-				machinesMarkedByCAAnnotationValue: createMachinesMarkedForDeletionAnnotationValue(generateNames("machine", 1)),
-				mdName:                            "machinedeployment-1",
-				mdReplicas:                        1,
-				err:                               nil,
+				prio1Machines:                          newMachines(1, "fakeID", nil, "machinedeployment-1", "machineset-1", []string{"1"}),
+				machinesTriggerDeletionAnnotationValue: createMachinesTriggeredForDeletionAnnotValue(generateNames("machine", 1)),
+				mdName:                                 "machinedeployment-1",
+				mdReplicas:                             1,
+				err:                                    nil,
 			},
 		},
 		{
@@ -301,7 +302,7 @@ func TestDeleteNodes(t *testing.T) {
 			machineDeployment, err := m.machineClient.MachineDeployments(m.namespace).Get(context.TODO(), entry.expect.mdName, metav1.GetOptions{})
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(machineDeployment.Spec.Replicas).To(BeNumerically("==", entry.expect.mdReplicas))
-			g.Expect(machineDeployment.Annotations[machinesMarkedByCAForDeletionAnnotation]).To(Equal(entry.expect.machinesMarkedByCAAnnotationValue))
+			g.Expect(machineDeployment.Annotations[machineutils.TriggerDeletionByMCM]).To(Equal(entry.expect.machinesTriggerDeletionAnnotationValue))
 
 		})
 	}
@@ -333,14 +334,14 @@ func TestIdempotencyOfDeleteNodes(t *testing.T) {
 	machineDeployment, err := m.machineClient.MachineDeployments(m.namespace).Get(context.TODO(), setupObj.machineDeployments[0].Name, metav1.GetOptions{})
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(machineDeployment.Spec.Replicas).To(BeNumerically("==", 2))
-	g.Expect(machineDeployment.Annotations[machinesMarkedByCAForDeletionAnnotation]).To(Equal(createMachinesMarkedForDeletionAnnotationValue(generateNames("machine", 1))))
+	g.Expect(machineDeployment.Annotations[machineutils.TriggerDeletionByMCM]).To(Equal(createMachinesTriggeredForDeletionAnnotValue(generateNames("machine", 1))))
 }
 
 func TestRefresh(t *testing.T) {
 	type expect struct {
-		prio3Machines                                []string
-		machinesMarkedByCAForDeletionAnnotationValue string
-		err                                          error
+		prio3Machines                          []string
+		machinesTriggerDeletionAnnotationValue string
+		err                                    error
 	}
 	type data struct {
 		name   string
@@ -374,7 +375,7 @@ func TestRefresh(t *testing.T) {
 			},
 		},
 		{
-			"should reset priority of a machine if it is not present in machines-marked-by-ca-for-deletion annotation on machine deployment",
+			"should reset priority of a machine if it is not present in trigger deletion annotation on machine deployment",
 			setup{
 				nodes:              newNodes(1, "fakeID"),
 				machines:           newMachines(1, "fakeID", nil, "machinedeployment-1", "machineset-1", []string{"1"}),
@@ -388,17 +389,17 @@ func TestRefresh(t *testing.T) {
 			},
 		},
 		{
-			"should update the machines-marked-by-ca-for-deletion annotation and remove non-existing machines",
+			"should update the trigger deletion annotation and remove non-existing machines",
 			setup{
 				nodes:              newNodes(1, "fakeID"),
 				machines:           newMachines(1, "fakeID", nil, "machinedeployment-1", "machineset-1", []string{"1"}),
-				machineDeployments: newMachineDeployments(1, 0, nil, map[string]string{machinesMarkedByCAForDeletionAnnotation: "machine-1,machine-2"}, nil),
+				machineDeployments: newMachineDeployments(1, 0, nil, map[string]string{machineutils.TriggerDeletionByMCM: "machine-1,machine-2"}, nil),
 				nodeGroups:         []string{nodeGroup2},
 				mcmDeployment:      newMCMDeployment(1),
 			},
 			expect{
-				machinesMarkedByCAForDeletionAnnotationValue: createMachinesMarkedForDeletionAnnotationValue(generateNames("machine", 1)),
-				err: nil,
+				machinesTriggerDeletionAnnotationValue: createMachinesTriggeredForDeletionAnnotValue(generateNames("machine", 1)),
+				err:                                    nil,
 			},
 		},
 	}

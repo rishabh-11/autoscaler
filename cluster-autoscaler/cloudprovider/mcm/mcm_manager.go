@@ -27,8 +27,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/gardener/machine-controller-manager/pkg/util/provider/machineutils"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/autoscaler/cluster-autoscaler/config/dynamic"
 	v1appslister "k8s.io/client-go/listers/apps/v1"
 	"k8s.io/utils/pointer"
@@ -72,6 +74,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
 	kubeletapis "k8s.io/kubelet/pkg/apis"
+	//	"github.com/gardener/machine-controller-manager/pkg/util/provider/"
 )
 
 const (
@@ -100,8 +103,6 @@ const (
 	machineDeploymentPausedReason = "DeploymentPaused"
 	// machineDeploymentNameLabel key for Machine Deployment name in machine labels
 	machineDeploymentNameLabel = "name"
-	// machinesMarkedByCAForDeletionAnnotation is the annotation set by CA on the MachineDeployment and represents machines that must be drained and deleted.
-	machinesMarkedByCAForDeletionAnnotation = "cluster-autoscaler.kubernetes.io/machines-marked-by-ca-for-deletion"
 	// poolNameLabel is the name of the label for gardener worker pool
 	poolNameLabel = "worker.gardener.cloud/pool"
 )
@@ -514,10 +515,10 @@ func (m *McmManager) scaleDownMachineDeployment(ctx context.Context, mdName stri
 	if mdCopy.Annotations == nil {
 		mdCopy.Annotations = make(map[string]string)
 	}
-	alreadyMarkedMachineNames := getMachineNamesMarkedByCAForDeletion(md)
-	toMarkMachineNames := mergeStringSlicesUnique(alreadyMarkedMachineNames, toDeleteMachineNames)
-	markedAnnotValue := createMachinesMarkedForDeletionAnnotationValue(toMarkMachineNames)
-	mdCopy.Annotations[machinesMarkedByCAForDeletionAnnotation] = markedAnnotValue
+	alreadyMarkedMachineNames := getMachineNamesTriggeredForDeletion(md)
+	toDeleteMachineNames = mergeStringSlicesUnique(alreadyMarkedMachineNames, toDeleteMachineNames)
+	markedAnnotValue := createMachinesTriggeredForDeletionAnnotValue(toDeleteMachineNames)
+	mdCopy.Annotations[machineutils.TriggerDeletionByMCM] = markedAnnotValue
 	_, err = m.machineClient.MachineDeployments(mdCopy.Namespace).Update(ctx, mdCopy, metav1.UpdateOptions{})
 	if err != nil {
 		return true, err
@@ -845,8 +846,16 @@ func filterOutNodes(nodes []*v1.Node, instanceType string) []*v1.Node {
 			filteredNodes = append(filteredNodes, node)
 		}
 	}
-
 	return filteredNodes
+}
+
+func filterMachinesMatchingNames(machines []*v1alpha1.Machine, matchingNames sets.Set[string]) (filteredMachines []*v1alpha1.Machine) {
+	for _, m := range machines {
+		if matchingNames.Has(m.Name) {
+			filteredMachines = append(filteredMachines, m)
+		}
+	}
+	return
 }
 
 func getInstanceTypeForNode(node *v1.Node) string {
@@ -1070,8 +1079,4 @@ func filterExtendedResources(allResources v1.ResourceList) (extendedResources v1
 		return slices.Contains(knownResourceNames, name)
 	})
 	return
-}
-
-func createMachinesMarkedForDeletionAnnotationValue(machineNames []string) string {
-	return strings.Join(machineNames, ",")
 }

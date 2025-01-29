@@ -25,12 +25,14 @@ import (
 	"context"
 	"fmt"
 	"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/gardener/machine-controller-manager/pkg/util/provider/machineutils"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
@@ -323,29 +325,34 @@ func (ngImpl *NodeGroupImpl) DecreaseTargetSize(delta int) error {
 	}, "MachineDeployment", "update", ngImpl.Name)
 }
 
-// Refresh resets the priority annotation for the machines that are not present in machines-marked-by-ca-for-deletion annotation on the machineDeployment
+// Refresh cordons the Nodes corresponding to the machines that have been marked for deletion in the TriggerDeletionByMCM annotation on the MachineDeployment
 func (ngImpl *NodeGroupImpl) Refresh() error {
 	mcd, err := ngImpl.mcmManager.GetMachineDeploymentObject(ngImpl.Name)
 	if err != nil {
 		return err
 	}
-	markedMachineNames := getMachineNamesMarkedByCAForDeletion(mcd)
-	if len(markedMachineNames) == 0 {
+	toDeleteMachineNames := getMachineNamesTriggeredForDeletion(mcd)
+	if len(toDeleteMachineNames) == 0 {
 		return nil
 	}
-	markedMachines, err := ngImpl.mcmManager.getMachinesForMachineDeployment(ngImpl.Name)
+	machinesOfNodeGroup, err := ngImpl.mcmManager.getMachinesForMachineDeployment(ngImpl.Name)
 	if err != nil {
 		klog.Errorf("NodeGroup.Refresh() of %q failed to get machines for MachineDeployment due to: %v", ngImpl.Name, err)
 		return fmt.Errorf("failed refresh of NodeGroup %q due to: %v", ngImpl.Name, err)
 	}
-	correspondingNodeNames := getNodeNamesFromMachines(markedMachines)
-	if len(correspondingNodeNames) == 0 {
-		klog.Warningf("NodeGroup.Refresh() of %q could not find correspondingNodeNames for markedMachines %q of MachineDeployment", ngImpl.Name, markedMachineNames)
+	toDeleteMachines := filterMachinesMatchingNames(machinesOfNodeGroup, sets.New(toDeleteMachineNames...))
+	if len(toDeleteMachines) == 0 {
+		klog.Warningf("NodeGroup.Refresh() of %q could not find Machine objects for toDeleteMachineNames %q", ngImpl.Name, toDeleteMachineNames)
 		return nil
 	}
-	err = ngImpl.mcmManager.cordonNodes(correspondingNodeNames)
+	toDeleteNodeNames := getNodeNamesFromMachines(toDeleteMachines)
+	if len(toDeleteNodeNames) == 0 {
+		klog.Warningf("NodeGroup.Refresh() of %q could not find toDeleteNodeNames for toDeleteMachineNames %q of MachineDeployment", ngImpl.Name, toDeleteMachineNames)
+		return nil
+	}
+	err = ngImpl.mcmManager.cordonNodes(toDeleteNodeNames)
 	if err != nil {
-		// we do not return error since we don't want this to block CA operation.
+		// we do not return error since we don't want this to block CA operation. This is best-effort.
 		klog.Warningf("NodeGroup.Refresh() of %q ran into error cordoning nodes: %v", ngImpl.Name, err)
 	}
 	return nil
@@ -556,12 +563,16 @@ func (ngImpl *NodeGroupImpl) AtomicIncreaseSize(delta int) error {
 	return cloudprovider.ErrNotImplemented
 }
 
-// getMachineNamesMarkedByCAForDeletion returns the set of machine names marked by CA for deletion.
-func getMachineNamesMarkedByCAForDeletion(mcd *v1alpha1.MachineDeployment) []string {
-	if mcd.Annotations == nil || mcd.Annotations[machinesMarkedByCAForDeletionAnnotation] == "" {
+// getMachineNamesTriggeredForDeletion returns the set of machine names contained within the machineutils.TriggerDeletionByMCM annotation on the given MachineDeployment
+func getMachineNamesTriggeredForDeletion(mcd *v1alpha1.MachineDeployment) []string {
+	if mcd.Annotations == nil || mcd.Annotations[machineutils.TriggerDeletionByMCM] == "" {
 		return nil
 	}
-	return strings.Split(mcd.Annotations[machinesMarkedByCAForDeletionAnnotation], ",")
+	return strings.Split(mcd.Annotations[machineutils.TriggerDeletionByMCM], ",")
+}
+
+func createMachinesTriggeredForDeletionAnnotValue(machineNames []string) string {
+	return strings.Join(machineNames, ",")
 }
 
 func mergeStringSlicesUnique(slice1, slice2 []string) []string {
