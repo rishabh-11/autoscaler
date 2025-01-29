@@ -100,8 +100,7 @@ const (
 	machineDeploymentPausedReason = "DeploymentPaused"
 	// machineDeploymentNameLabel key for Machine Deployment name in machine labels
 	machineDeploymentNameLabel = "name"
-	// machinesMarkedByCAForDeletionAnnotation is the annotation set by CA on machine deployment. Its value denotes the machines that
-	// CA marked for deletion by updating the priority annotation to 1 and scaling down the machine deployment.
+	// machinesMarkedByCAForDeletionAnnotation is the annotation set by CA on the MachineDeployment and represents machines that must be drained and deleted.
 	machinesMarkedByCAForDeletionAnnotation = "cluster-autoscaler.kubernetes.io/machines-marked-by-ca-for-deletion"
 	// poolNameLabel is the name of the label for gardener worker pool
 	poolNameLabel = "worker.gardener.cloud/pool"
