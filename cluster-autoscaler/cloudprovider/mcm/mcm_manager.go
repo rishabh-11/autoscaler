@@ -1064,9 +1064,9 @@ func buildNodeGroupImpl(mcmManager *McmManager, minSize int, maxSize int, namesp
 }
 
 // isMachineFailedOrTerminating returns true if machine is already being terminated or considered for termination by autoscaler.
+// TODO: Move to MCM machineutils.IsMachineFailedOrTerminating after MCM release.
 func isMachineFailedOrTerminating(machine *v1alpha1.Machine) bool {
 	if !machine.GetDeletionTimestamp().IsZero() || machine.Status.CurrentStatus.Phase == v1alpha1.MachineFailed {
-		klog.Infof("Machine %q is already being terminated or in a failed phase, and hence skipping the deletion", machine.Name)
 		return true
 	}
 	return false

@@ -135,17 +135,17 @@ func (mcm *mcmCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprovider.N
 		return nil, nil
 	}
 
-	machineInfo, err := mcm.mcmManager.GetMachineInfo(node)
+	mInfo, err := mcm.mcmManager.GetMachineInfo(node)
 	if err != nil {
 		return nil, err
 	}
 
-	if machineInfo == nil {
+	if mInfo == nil {
 		klog.V(4).Infof("Skipped node %v, it's either been removed or it's not managed by this controller", node.Spec.ProviderID)
 		return nil, nil
 	}
 
-	md, err := mcm.mcmManager.GetNodeGroupImpl(machineInfo.Key)
+	md, err := mcm.mcmManager.GetNodeGroupImpl(mInfo.Key)
 	if err != nil {
 		return nil, err
 	}
@@ -391,17 +391,17 @@ func (ngImpl *NodeGroupImpl) DeleteNodes(nodes []*apiv1.Node) error {
 	}
 	var toDeleteMachineInfos []machineInfo
 	for _, node := range nodes {
-		belongs, machineInfo, err := ngImpl.Belongs(node)
+		belongs, mInfo, err := ngImpl.Belongs(node)
 		if err != nil {
 			return err
 		} else if !belongs {
 			return fmt.Errorf("%s belongs to a different MachineDeployment than %q", node.Name, ngImpl.Name)
 		}
-		if machineInfo.FailedOrTerminating {
-			klog.V(3).Infof("for NodeGroup %q, Machine %q is already marked as terminating - skipping deletion", ngImpl.Name, machineInfo.Key.Name)
+		if mInfo.FailedOrTerminating {
+			klog.V(3).Infof("for NodeGroup %q, Machine %q is already marked as terminating - skipping deletion", ngImpl.Name, mInfo.Key.Name)
 			continue
 		}
-		toDeleteMachineInfos = append(toDeleteMachineInfos, *machineInfo)
+		toDeleteMachineInfos = append(toDeleteMachineInfos, *mInfo)
 	}
 	return ngImpl.deleteMachines(toDeleteMachineInfos)
 }
@@ -564,6 +564,7 @@ func (ngImpl *NodeGroupImpl) AtomicIncreaseSize(delta int) error {
 }
 
 // getMachineNamesTriggeredForDeletion returns the set of machine names contained within the machineutils.TriggerDeletionByMCM annotation on the given MachineDeployment
+// TODO: Move to using MCM annotations.GetMachineNamesTriggeredForDeletion after MCM release.
 func getMachineNamesTriggeredForDeletion(mcd *v1alpha1.MachineDeployment) []string {
 	if mcd.Annotations == nil || mcd.Annotations[machineutils.TriggerDeletionByMCM] == "" {
 		return nil
