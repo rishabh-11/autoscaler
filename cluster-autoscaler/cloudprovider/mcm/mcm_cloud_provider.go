@@ -331,8 +331,8 @@ func (ngImpl *NodeGroupImpl) Refresh() error {
 	if err != nil {
 		return err
 	}
-	toDeleteMachineNames := getMachineNamesTriggeredForDeletion(mcd)
-	if len(toDeleteMachineNames) == 0 {
+	toBeDeletedMachineNames := getMachineNamesTriggeredForDeletion(mcd)
+	if len(toBeDeletedMachineNames) == 0 {
 		return nil
 	}
 	machinesOfNodeGroup, err := ngImpl.mcmManager.getMachinesForMachineDeployment(ngImpl.Name)
@@ -340,17 +340,17 @@ func (ngImpl *NodeGroupImpl) Refresh() error {
 		klog.Errorf("NodeGroup.Refresh() of %q failed to get machines for MachineDeployment due to: %v", ngImpl.Name, err)
 		return fmt.Errorf("failed refresh of NodeGroup %q due to: %v", ngImpl.Name, err)
 	}
-	toDeleteMachines := filterMachinesMatchingNames(machinesOfNodeGroup, sets.New(toDeleteMachineNames...))
-	if len(toDeleteMachines) == 0 {
-		klog.Warningf("NodeGroup.Refresh() of %q could not find Machine objects for toDeleteMachineNames %q", ngImpl.Name, toDeleteMachineNames)
+	toBeDeletedMachines := filterMachinesMatchingNames(machinesOfNodeGroup, sets.New(toBeDeletedMachineNames...))
+	if len(toBeDeletedMachines) == 0 {
+		klog.Warningf("NodeGroup.Refresh() of %q could not find Machine objects for toBeDeletedMachineNames %q", ngImpl.Name, toBeDeletedMachineNames)
 		return nil
 	}
-	toDeleteNodeNames := getNodeNamesFromMachines(toDeleteMachines)
-	if len(toDeleteNodeNames) == 0 {
-		klog.Warningf("NodeGroup.Refresh() of %q could not find toDeleteNodeNames for toDeleteMachineNames %q of MachineDeployment", ngImpl.Name, toDeleteMachineNames)
+	toBeDeletedNodeNames := getNodeNamesFromMachines(toBeDeletedMachines)
+	if len(toBeDeletedNodeNames) == 0 {
+		klog.Warningf("NodeGroup.Refresh() of %q could not find toBeDeletedNodeNames for toBeDeletedMachineNames %q of MachineDeployment", ngImpl.Name, toBeDeletedMachineNames)
 		return nil
 	}
-	err = ngImpl.mcmManager.cordonNodes(toDeleteNodeNames)
+	err = ngImpl.mcmManager.cordonNodes(toBeDeletedNodeNames)
 	if err != nil {
 		// we do not return error since we don't want this to block CA operation. This is best-effort.
 		klog.Warningf("NodeGroup.Refresh() of %q ran into error cordoning nodes: %v", ngImpl.Name, err)
@@ -389,7 +389,7 @@ func (ngImpl *NodeGroupImpl) DeleteNodes(nodes []*apiv1.Node) error {
 	if int(size) <= ngImpl.MinSize() {
 		return fmt.Errorf("min size reached, nodes will not be deleted")
 	}
-	var toDeleteMachineInfos []machineInfo
+	var toBeDeletedMachineInfos []machineInfo
 	for _, node := range nodes {
 		belongs, mInfo, err := ngImpl.Belongs(node)
 		if err != nil {
@@ -401,18 +401,25 @@ func (ngImpl *NodeGroupImpl) DeleteNodes(nodes []*apiv1.Node) error {
 			klog.V(3).Infof("for NodeGroup %q, Machine %q is already marked as terminating - skipping deletion", ngImpl.Name, mInfo.Key.Name)
 			continue
 		}
-		toDeleteMachineInfos = append(toDeleteMachineInfos, *mInfo)
+		toBeDeletedMachineInfos = append(toBeDeletedMachineInfos, *mInfo)
 	}
-	return ngImpl.deleteMachines(toDeleteMachineInfos)
+	return ngImpl.deleteMachines(toBeDeletedMachineInfos)
 }
 
-// deleteMachines annotates the corresponding MachineDeployment with machine names of toDeleteMachineInfos, reduces the desired replicas of the corresponding MachineDeployment and cordons corresponding nodes belonging to toDeleteMachineInfos
-func (ngImpl *NodeGroupImpl) deleteMachines(toDeleteMachineInfos []machineInfo) error {
-	if len(toDeleteMachineInfos) == 0 {
+// deleteMachines annotates the corresponding MachineDeployment with machine names of toBeDeletedMachineInfos, reduces the desired replicas of the corresponding MachineDeployment and cordons corresponding nodes belonging to toBeDeletedMachineInfos
+func (ngImpl *NodeGroupImpl) deleteMachines(toBeDeletedMachineInfos []machineInfo) error {
+	if len(toBeDeletedMachineInfos) == 0 {
 		return nil
 	}
-	release := ngImpl.AcquireScalingMutex("deleteMachines")
+	var toBeDeletedMachineNames, toBeDeletedNodeNames []string
+	for _, mInfo := range toBeDeletedMachineInfos {
+		toBeDeletedMachineNames = append(toBeDeletedMachineNames, mInfo.Key.Name)
+		toBeDeletedNodeNames = append(toBeDeletedNodeNames, mInfo.NodeName)
+	}
+
+	release := ngImpl.AcquireScalingMutex(fmt.Sprintf("deleteMachines for %q", toBeDeletedMachineNames))
 	defer release()
+
 	// get the machine deployment and return if rolling update is not finished
 	md, err := ngImpl.mcmManager.GetMachineDeploymentObject(ngImpl.Name)
 	if err != nil {
@@ -422,21 +429,15 @@ func (ngImpl *NodeGroupImpl) deleteMachines(toDeleteMachineInfos []machineInfo) 
 		return fmt.Errorf("MachineDeployment %s is under rolling update , cannot reduce replica count", ngImpl.Name)
 	}
 
-	var toDeleteMachineNames, toDeleteNodeNames []string
-	for _, machineInfo := range toDeleteMachineInfos {
-		toDeleteMachineNames = append(toDeleteMachineNames, machineInfo.Key.Name)
-		toDeleteNodeNames = append(toDeleteNodeNames, machineInfo.NodeName)
-	}
-
 	// Trying to update the machineDeployment till the deadline
 	err = ngImpl.mcmManager.retry(func(ctx context.Context) (bool, error) {
-		return ngImpl.mcmManager.scaleDownMachineDeployment(ctx, ngImpl.Name, toDeleteMachineNames)
+		return ngImpl.mcmManager.scaleDownMachineDeployment(ctx, ngImpl.Name, toBeDeletedMachineNames)
 	}, "MachineDeployment", "update", ngImpl.Name)
 	if err != nil {
-		klog.Errorf("Unable to scale down MachineDeployment %s by %d and delete machines %q due to: %v", ngImpl.Name, len(toDeleteMachineNames), toDeleteMachineNames, err)
+		klog.Errorf("Unable to scale down MachineDeployment %s by %d and delete machines %q due to: %v", ngImpl.Name, len(toBeDeletedMachineNames), toBeDeletedMachineNames, err)
 		return fmt.Errorf("for NodeGroup %q, cannot scale down due to: %w", ngImpl.Name, err)
 	}
-	err = ngImpl.mcmManager.cordonNodes(toDeleteNodeNames)
+	err = ngImpl.mcmManager.cordonNodes(toBeDeletedNodeNames)
 	if err != nil {
 		// Do not return error as cordoning is best-effort
 		klog.Warningf("NodeGroup.deleteMachines() of %q ran into error cordoning nodes: %v", ngImpl.Name, err)
@@ -446,10 +447,10 @@ func (ngImpl *NodeGroupImpl) deleteMachines(toDeleteMachineInfos []machineInfo) 
 
 // AcquireScalingMutex acquires the scalingMutex associated with this NodeGroup and returns a function that releases the scalingMutex that is expected to be deferred by the caller.
 func (ngImpl *NodeGroupImpl) AcquireScalingMutex(operation string) (releaseFn func()) {
-	klog.V(3).Infof("%s is acquired scalingMutex for NodeGroup %q", operation, ngImpl.Name)
 	ngImpl.scalingMutex.Lock()
-	klog.V(3).Infof("%s has acquired scalingMutex for %q", operation, ngImpl.Name)
+	klog.V(3).Infof("%s has acquired scalingMutex of NodeGroup %q", operation, ngImpl.Name)
 	releaseFn = func() {
+		klog.V(3).Infof("%s is releasing scalingMutex of NodeGroup %q", operation, ngImpl.Name)
 		ngImpl.scalingMutex.Unlock()
 	}
 	return
@@ -572,6 +573,7 @@ func getMachineNamesTriggeredForDeletion(mcd *v1alpha1.MachineDeployment) []stri
 	return strings.Split(mcd.Annotations[machineutils.TriggerDeletionByMCM], ",")
 }
 
+// TODO: Move to using MCM annotations.CreateMachinesTriggeredForDeletionAnnotValue after MCM release
 func createMachinesTriggeredForDeletionAnnotValue(machineNames []string) string {
 	return strings.Join(machineNames, ",")
 }

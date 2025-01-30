@@ -494,13 +494,13 @@ func (m *McmManager) updateAnnotationOnMachine(ctx context.Context, mcName strin
 // scaleDownMachineDeployment scales down the MachineDeployment for given name by the length of toDeleteMachineNames
 // It also updates the machines-marked-by-ca-for-deletion annotation on the machine deployment with the list of toDeleteMachineNames
 // NOTE: Callers MUST take the NodeGroup scalingMutex before invoking this method.
-func (m *McmManager) scaleDownMachineDeployment(ctx context.Context, mdName string, toDeleteMachineNames []string) (bool, error) {
+func (m *McmManager) scaleDownMachineDeployment(ctx context.Context, mdName string, toBeDeletedMachineNames []string) (bool, error) {
 	md, err := m.GetMachineDeploymentObject(mdName)
 	if err != nil {
 		return true, err
 	}
 
-	scaleDownAmount := len(toDeleteMachineNames)
+	scaleDownAmount := len(toBeDeletedMachineNames)
 	expectedReplicas := md.Spec.Replicas - int32(scaleDownAmount)
 	if expectedReplicas == md.Spec.Replicas {
 		klog.Infof("MachineDeployment %q is already set to %d, skipping the update", md.Name, expectedReplicas)
@@ -516,9 +516,11 @@ func (m *McmManager) scaleDownMachineDeployment(ctx context.Context, mdName stri
 		mdCopy.Annotations = make(map[string]string)
 	}
 	alreadyMarkedMachineNames := getMachineNamesTriggeredForDeletion(md)
-	toDeleteMachineNames = mergeStringSlicesUnique(alreadyMarkedMachineNames, toDeleteMachineNames)
-	markedAnnotValue := createMachinesTriggeredForDeletionAnnotValue(toDeleteMachineNames)
-	mdCopy.Annotations[machineutils.TriggerDeletionByMCM] = markedAnnotValue
+	toBeDeletedMachineNames = mergeStringSlicesUnique(alreadyMarkedMachineNames, toBeDeletedMachineNames)
+	triggerDeletionAnnotValue := createMachinesTriggeredForDeletionAnnotValue(toBeDeletedMachineNames)
+	if mdCopy.Annotations[machineutils.TriggerDeletionByMCM] != triggerDeletionAnnotValue {
+		mdCopy.Annotations[machineutils.TriggerDeletionByMCM] = triggerDeletionAnnotValue
+	}
 	_, err = m.machineClient.MachineDeployments(mdCopy.Namespace).Update(ctx, mdCopy, metav1.UpdateOptions{})
 	if err != nil {
 		return true, err
