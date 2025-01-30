@@ -284,7 +284,7 @@ func (ngImpl *NodeGroupImpl) IncreaseSize(delta int) error {
 	if delta <= 0 {
 		return fmt.Errorf("size increase must be positive")
 	}
-	release := ngImpl.AcquireScalingMutex("IncreaseSize")
+	release := ngImpl.AcquireScalingMutex(fmt.Sprintf("IncreaseSize by #%d", delta))
 	defer release()
 	size, err := ngImpl.mcmManager.GetMachineDeploymentSize(ngImpl.Name)
 	if err != nil {
@@ -309,7 +309,7 @@ func (ngImpl *NodeGroupImpl) DecreaseTargetSize(delta int) error {
 	if delta >= 0 {
 		return fmt.Errorf("size decrease size must be negative")
 	}
-	release := ngImpl.AcquireScalingMutex("DecreaseTargetSize")
+	release := ngImpl.AcquireScalingMutex(fmt.Sprintf("DecreaseTargetSize by #%d", delta))
 	defer release()
 	size, err := ngImpl.mcmManager.GetMachineDeploymentSize(ngImpl.Name)
 	if err != nil {
