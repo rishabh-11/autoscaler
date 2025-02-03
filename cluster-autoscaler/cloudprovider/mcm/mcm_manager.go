@@ -169,6 +169,12 @@ type machineInfo struct {
 	FailedOrTerminating bool
 }
 
+type scaleDownData struct {
+	RevisedToBeDeletedNames  sets.Set[string]
+	RevisedScaledownAmount   int
+	RevisedMachineDeployment *v1alpha1.MachineDeployment
+}
+
 func init() {
 	controlBurst = flag.Int("control-apiserver-burst", rest.DefaultBurst, "Throttling burst configuration for the client to control cluster's apiserver.")
 	controlQPS = flag.Float64("control-apiserver-qps", float64(rest.DefaultQPS), "Throttling QPS configuration for the client to control cluster's apiserver.")
@@ -491,8 +497,9 @@ func (m *McmManager) updateAnnotationOnMachine(ctx context.Context, mcName strin
 	return true, err
 }
 
-// scaleDownMachineDeployment scales down the MachineDeployment for given name by the length of toDeleteMachineNames
-// It also updates the machines-marked-by-ca-for-deletion annotation on the machine deployment with the list of toDeleteMachineNames
+// scaleDownMachineDeployment scales down the MachineDeployment for given name by the length of toDeleteMachineNames after removing machine names that
+// are already marked for deletion in the machineutils.TriggerDeletionByMCM of the MachineDeployment.
+// It then updates the machineutils.TriggerDeletionByMCM annotation with revised toBeDeletedMachineNames along with the replica count as a atomic operation.
 // NOTE: Callers MUST take the NodeGroup scalingMutex before invoking this method.
 func (m *McmManager) scaleDownMachineDeployment(ctx context.Context, mdName string, toBeDeletedMachineNames []string) (bool, error) {
 	md, err := m.GetMachineDeploymentObject(mdName)
@@ -500,33 +507,21 @@ func (m *McmManager) scaleDownMachineDeployment(ctx context.Context, mdName stri
 		return true, err
 	}
 
-	scaleDownAmount := len(toBeDeletedMachineNames)
-	expectedReplicas := md.Spec.Replicas - int32(scaleDownAmount)
-	if expectedReplicas == md.Spec.Replicas {
-		klog.Infof("MachineDeployment %q is already set to %d, skipping the update", md.Name, expectedReplicas)
+	data := computeScaledownData(md, toBeDeletedMachineNames)
+	if data.RevisedScaledownAmount == 0 {
+		klog.V(3).Infof("Skipping scaledown since MachineDeployment %q has already marked %v for deletion by MCM, skipping the scale-down", md.Name, toBeDeletedMachineNames)
 		return false, nil
-	} else if expectedReplicas < 0 {
-		klog.Errorf("Cannot delete machines in MachineDeployment %s, expected decrease in replicas %d is more than current replicas %d", mdName, scaleDownAmount, md.Spec.Replicas)
-		return false, fmt.Errorf("cannot delete machines in MachineDeployment %s, expected decrease in replicas %d is more than current replicas %d", mdName, scaleDownAmount, md.Spec.Replicas)
 	}
 
-	alreadyMarkedMachineNames := getMachineNamesTriggeredForDeletion(md)
-	toBeMarkedMachineNamesSet := sets.NewString(toBeDeletedMachineNames...).Insert(alreadyMarkedMachineNames...)
-	triggerDeletionAnnotValue := createMachinesTriggeredForDeletionAnnotValue(toBeMarkedMachineNamesSet.List())
-
-	mdCopy := md.DeepCopy()
-	mdCopy.Spec.Replicas = expectedReplicas
-	if mdCopy.Annotations == nil {
-		mdCopy.Annotations = make(map[string]string)
+	if data.RevisedMachineDeployment == nil {
+		klog.V(3).Infof("Skipping scaledown for MachineDeployment %q for toBeDeletedMachineNames: %v", md.Name, toBeDeletedMachineNames)
+		return false, nil
 	}
-	if mdCopy.Annotations[machineutils.TriggerDeletionByMCM] != triggerDeletionAnnotValue {
-		mdCopy.Annotations[machineutils.TriggerDeletionByMCM] = triggerDeletionAnnotValue
-	}
-	_, err = m.machineClient.MachineDeployments(mdCopy.Namespace).Update(ctx, mdCopy, metav1.UpdateOptions{})
+	updatedMd, err := m.machineClient.MachineDeployments(data.RevisedMachineDeployment.Namespace).Update(ctx, data.RevisedMachineDeployment, metav1.UpdateOptions{})
 	if err != nil {
 		return true, err
 	}
-	klog.V(2).Infof("MachineDeployment %s size decreased to %d, triggerDeletionAnnotValue: %q", mdCopy.Name, mdCopy.Spec.Replicas, triggerDeletionAnnotValue)
+	klog.V(2).Infof("MachineDeployment %s size decreased from %d to %d, TriggerDeletionByMCM Annotation Value: %q", md.Name, md.Spec.Replicas, updatedMd.Spec.Replicas, updatedMd.Annotations[machineutils.TriggerDeletionByMCM])
 	return false, nil
 }
 
@@ -1078,5 +1073,37 @@ func filterExtendedResources(allResources v1.ResourceList) (extendedResources v1
 	maps.DeleteFunc(extendedResources, func(name v1.ResourceName, _ resource.Quantity) bool {
 		return slices.Contains(knownResourceNames, name)
 	})
+	return
+}
+
+// computeScaledownData computes fresh scaleDownData for the given MachineDeployment given the machineNamesForDeletion
+func computeScaledownData(md *v1alpha1.MachineDeployment, machineNamesForDeletion []string) (data scaleDownData) {
+	forDeletionSet := sets.New(machineNamesForDeletion...)
+	alreadyMarkedSet := sets.New(getMachineNamesTriggeredForDeletion(md)...)
+
+	uniqueForDeletionSet := forDeletionSet.Difference(alreadyMarkedSet)
+	toBeMarkedSet := alreadyMarkedSet.Union(forDeletionSet)
+
+	data.RevisedToBeDeletedNames = uniqueForDeletionSet
+	data.RevisedScaledownAmount = uniqueForDeletionSet.Len()
+	data.RevisedMachineDeployment = nil
+
+	expectedReplicas := md.Spec.Replicas - int32(data.RevisedScaledownAmount)
+	if expectedReplicas == md.Spec.Replicas {
+		klog.Infof("MachineDeployment %q is already set to %d, no need to scale-down", md.Name, expectedReplicas)
+	} else if expectedReplicas < 0 {
+		klog.Errorf("Cannot delete machines in MachineDeployment %q, expected decrease in replicas: %d is more than current replicas: %d", md.Name, data.RevisedScaledownAmount, md.Spec.Replicas)
+	} else {
+		mdCopy := md.DeepCopy()
+		if mdCopy.Annotations == nil {
+			mdCopy.Annotations = make(map[string]string)
+		}
+		triggerDeletionAnnotValue := createMachinesTriggeredForDeletionAnnotValue(toBeMarkedSet.UnsortedList())
+		if mdCopy.Annotations[machineutils.TriggerDeletionByMCM] != triggerDeletionAnnotValue {
+			mdCopy.Annotations[machineutils.TriggerDeletionByMCM] = triggerDeletionAnnotValue
+		}
+		mdCopy.Spec.Replicas = expectedReplicas
+		data.RevisedMachineDeployment = mdCopy
+	}
 	return
 }

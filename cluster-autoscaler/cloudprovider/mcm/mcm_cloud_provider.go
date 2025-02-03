@@ -341,8 +341,8 @@ func (ngImpl *nodeGroup) Refresh() error {
 	}
 	machinesOfNodeGroup, err := ngImpl.mcmManager.getMachinesForMachineDeployment(ngImpl.Name)
 	if err != nil {
-		klog.Errorf("NodeGroup.Refresh() of %q failed to get machines for MachineDeployment due to: %v", ngImpl.Name, err)
-		return fmt.Errorf("failed refresh of NodeGroup %q due to: %v", ngImpl.Name, err)
+		klog.Warningf("NodeGroup.Refresh() of %q failed to get machines for MachineDeployment due to: %v", ngImpl.Name, err)
+		return nil
 	}
 	toBeDeletedMachines := filterMachinesMatchingNames(machinesOfNodeGroup, sets.New(toBeDeletedMachineNames...))
 	if len(toBeDeletedMachines) == 0 {
@@ -479,7 +479,7 @@ func getNodeNamesFromMachines(machines []*v1alpha1.Machine) []string {
 	return nodeNames
 }
 
-// Id returns MachineDeployment id.
+// Id returns NodeGroup name
 func (ngImpl *nodeGroup) Id() string {
 	return ngImpl.Name
 }
