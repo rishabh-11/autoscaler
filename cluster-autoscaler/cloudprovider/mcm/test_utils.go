@@ -290,6 +290,7 @@ func createMcmManager(
 		machineLister:           machines.Lister(),
 		machineClassLister:      machineClasses.Lister(),
 		nodeLister:              nodes.Lister(),
+		nodeInterface:           fakeTargetCoreClient.CoreV1().Nodes(),
 		maxRetryTimeout:         5 * time.Second,
 		retryInterval:           1 * time.Second,
 	}

@@ -171,7 +171,6 @@ func TestDeleteNodes(t *testing.T) {
 				},
 			},
 			action{node: newNodes(1, "fakeID")[0]},
-			//return fmt.Errorf("for NodeGroup %q, cannot scale down due to: %v", ngImpl.Name, toDeleteMachineNames, err)
 			expect{
 				mdName:     "machinedeployment-1",
 				mdReplicas: 2,

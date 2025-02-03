@@ -510,14 +510,15 @@ func (m *McmManager) scaleDownMachineDeployment(ctx context.Context, mdName stri
 		return false, fmt.Errorf("cannot delete machines in MachineDeployment %s, expected decrease in replicas %d is more than current replicas %d", mdName, scaleDownAmount, md.Spec.Replicas)
 	}
 
+	alreadyMarkedMachineNames := getMachineNamesTriggeredForDeletion(md)
+	toBeMarkedMachineNamesSet := sets.NewString(toBeDeletedMachineNames...).Insert(alreadyMarkedMachineNames...)
+	triggerDeletionAnnotValue := createMachinesTriggeredForDeletionAnnotValue(toBeMarkedMachineNamesSet.List())
+
 	mdCopy := md.DeepCopy()
 	mdCopy.Spec.Replicas = expectedReplicas
 	if mdCopy.Annotations == nil {
 		mdCopy.Annotations = make(map[string]string)
 	}
-	alreadyMarkedMachineNames := getMachineNamesTriggeredForDeletion(md)
-	toBeDeletedMachineNames = mergeStringSlicesUnique(alreadyMarkedMachineNames, toBeDeletedMachineNames)
-	triggerDeletionAnnotValue := createMachinesTriggeredForDeletionAnnotValue(toBeDeletedMachineNames)
 	if mdCopy.Annotations[machineutils.TriggerDeletionByMCM] != triggerDeletionAnnotValue {
 		mdCopy.Annotations[machineutils.TriggerDeletionByMCM] = triggerDeletionAnnotValue
 	}
@@ -525,7 +526,7 @@ func (m *McmManager) scaleDownMachineDeployment(ctx context.Context, mdName stri
 	if err != nil {
 		return true, err
 	}
-	klog.V(2).Infof("MachineDeployment %s size decreased to %d ", mdCopy.Name, mdCopy.Spec.Replicas)
+	klog.V(2).Infof("MachineDeployment %s size decreased to %d, triggerDeletionAnnotValue: %q", mdCopy.Name, mdCopy.Spec.Replicas, triggerDeletionAnnotValue)
 	return false, nil
 }
 
@@ -947,9 +948,6 @@ func (m *McmManager) cordonNodes(nodeNames []string) error {
 	if len(nodeNames) == 0 {
 		return nil
 	}
-	if m.nodeInterface == nil {
-		return nil
-	}
 	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(m.maxRetryTimeout))
 	defer cancelFn()
 	var errs []error
@@ -977,8 +975,8 @@ func (m *McmManager) cordonNodes(nodeNames []string) error {
 	return nil
 }
 
-// GetMachineInfo extracts the machine Key from the given node's providerID if found and checks whether it is failed or terminating and returns the MachineInfo or an error
-func (m *McmManager) GetMachineInfo(node *apiv1.Node) (*machineInfo, error) {
+// getMachineInfo extracts the machine Key from the given node's providerID if found and checks whether it is failed or terminating and returns the MachineInfo or an error
+func (m *McmManager) getMachineInfo(node *apiv1.Node) (*machineInfo, error) {
 	machines, err := m.machineLister.Machines(m.namespace).List(labels.Everything())
 	if err != nil {
 		return nil, fmt.Errorf("cannot list machines in namespace %q due to: %s", m.namespace, err)

@@ -135,7 +135,7 @@ func (mcm *mcmCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprovider.N
 		return nil, nil
 	}
 
-	mInfo, err := mcm.mcmManager.GetMachineInfo(node)
+	mInfo, err := mcm.mcmManager.getMachineInfo(node)
 	if err != nil {
 		return nil, err
 	}
@@ -360,7 +360,7 @@ func (ngImpl *NodeGroupImpl) Refresh() error {
 
 // Belongs checks if the given node belongs to this NodeGroup and also returns its MachineInfo for its corresponding Machine
 func (ngImpl *NodeGroupImpl) Belongs(node *apiv1.Node) (belongs bool, mInfo *machineInfo, err error) {
-	mInfo, err = ngImpl.mcmManager.GetMachineInfo(node)
+	mInfo, err = ngImpl.mcmManager.getMachineInfo(node)
 	if err != nil || mInfo == nil {
 		return
 	}
@@ -575,18 +575,6 @@ func getMachineNamesTriggeredForDeletion(mcd *v1alpha1.MachineDeployment) []stri
 
 // TODO: Move to using MCM annotations.CreateMachinesTriggeredForDeletionAnnotValue after MCM release
 func createMachinesTriggeredForDeletionAnnotValue(machineNames []string) string {
+	slices.Sort(machineNames)
 	return strings.Join(machineNames, ",")
-}
-
-func mergeStringSlicesUnique(slice1, slice2 []string) []string {
-	seen := make(map[string]struct{}, len(slice1)+len(slice2))
-	for _, s := range slices.Concat(slice1, slice2) {
-		seen[s] = struct{}{}
-	}
-	concatenated := make([]string, 0, len(seen)) // TODO: Change to slices.Collect(maps.Keys(seen)) from Go 1.23
-	for s := range seen {
-		concatenated = append(concatenated, s)
-	}
-	slices.Sort(concatenated)
-	return concatenated
 }
