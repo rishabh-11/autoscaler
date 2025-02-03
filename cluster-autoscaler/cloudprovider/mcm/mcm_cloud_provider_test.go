@@ -287,7 +287,7 @@ func TestDeleteNodes(t *testing.T) {
 				trackers.ControlMachine.SetFailAtFakeResourceActions(entry.setup.controlMachineFakeResourceActions)
 			}
 
-			md, err := buildNodeGroupImplFromSpec(entry.setup.nodeGroups[0], m)
+			md, err := buildNodeGroupFromSpec(entry.setup.nodeGroups[0], m)
 			g.Expect(err).To(BeNil())
 
 			err = md.DeleteNodes([]*corev1.Node{entry.action.node})
@@ -322,7 +322,7 @@ func TestIdempotencyOfDeleteNodes(t *testing.T) {
 	m, trackers, hasSyncedCacheFns := createMcmManager(t, stop, testNamespace, setupObj.nodeGroups, controlMachineObjects, targetCoreObjects, nil)
 	defer trackers.Stop()
 	waitForCacheSync(t, stop, hasSyncedCacheFns)
-	md, err := buildNodeGroupImplFromSpec(setupObj.nodeGroups[0], m)
+	md, err := buildNodeGroupFromSpec(setupObj.nodeGroups[0], m)
 	g.Expect(err).To(BeNil())
 
 	err = md.DeleteNodes(newNodes(1, "fakeID"))
@@ -517,7 +517,7 @@ func TestNodes(t *testing.T) {
 				trackers.ControlMachine.SetFailAtFakeResourceActions(entry.setup.controlMachineFakeResourceActions)
 			}
 
-			md, err := buildNodeGroupImplFromSpec(entry.setup.nodeGroups[0], m)
+			md, err := buildNodeGroupFromSpec(entry.setup.nodeGroups[0], m)
 			g.Expect(err).To(BeNil())
 
 			returnedInstances, err := md.Nodes()
@@ -669,7 +669,7 @@ func TestGetOptions(t *testing.T) {
 			defer trackers.Stop()
 			waitForCacheSync(t, stop, hasSyncedCacheFns)
 
-			md, err := buildNodeGroupImplFromSpec(entry.setup.nodeGroups[0], m)
+			md, err := buildNodeGroupFromSpec(entry.setup.nodeGroups[0], m)
 			g.Expect(err).To(BeNil())
 
 			options, err := md.GetOptions(ngAutoScalingOpDefaults)

@@ -46,7 +46,7 @@ func newMachineDeployments(
 		machineDeployment := &v1alpha1.MachineDeployment{
 			TypeMeta: metav1.TypeMeta{
 				APIVersion: "machine.sapcloud.io",
-				Kind:       "NodeGroupImpl",
+				Kind:       "MachineDeployment",
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      fmt.Sprintf("machinedeployment-%d", i+1),
@@ -282,7 +282,7 @@ func createMcmManager(
 		discoveryOpts: cloudprovider.NodeGroupDiscoveryOptions{
 			NodeGroupSpecs: nodeGroups,
 		},
-		nodeGroups:              make(map[types.NamespacedName]*NodeGroupImpl),
+		nodeGroups:              make(map[types.NamespacedName]*nodeGroup),
 		deploymentLister:        appsControlSharedInformers.Deployments().Lister(),
 		machineClient:           fakeTypedMachineClient,
 		machineDeploymentLister: machineDeployments.Lister(),

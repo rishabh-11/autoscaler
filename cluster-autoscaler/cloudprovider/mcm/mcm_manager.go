@@ -131,7 +131,7 @@ type McmManager struct {
 	namespace               string
 	interrupt               chan struct{}
 	discoveryOpts           cloudprovider.NodeGroupDiscoveryOptions
-	nodeGroups              map[types.NamespacedName]*NodeGroupImpl
+	nodeGroups              map[types.NamespacedName]*nodeGroup
 	deploymentLister        v1appslister.DeploymentLister
 	machineClient           machineapi.MachineV1alpha1Interface
 	machineDeploymentLister machinelisters.MachineDeploymentLister
@@ -265,7 +265,7 @@ func createMCMManagerInternal(discoveryOpts cloudprovider.NodeGroupDiscoveryOpti
 		m := &McmManager{
 			namespace:               namespace,
 			interrupt:               make(chan struct{}),
-			nodeGroups:              make(map[types.NamespacedName]*NodeGroupImpl),
+			nodeGroups:              make(map[types.NamespacedName]*nodeGroup),
 			deploymentLister:        deploymentLister,
 			machineClient:           controlMachineClient,
 			machineClassLister:      machineClassLister,
@@ -316,7 +316,7 @@ func (m *McmManager) generateMachineDeploymentMap() error {
 // addNodeGroup adds node group defined in string spec. Format:
 // minNodes:maxNodes:namespace.machineDeploymentName
 func (m *McmManager) addNodeGroup(spec string) error {
-	nodeGroup, err := buildNodeGroupImplFromSpec(spec, m)
+	nodeGroup, err := buildNodeGroupFromSpec(spec, m)
 	if err != nil {
 		return err
 	}
@@ -384,8 +384,8 @@ func CreateMcmManager(discoveryOpts cloudprovider.NodeGroupDiscoveryOptions) (*M
 	return createMCMManagerInternal(discoveryOpts, defaultRetryInterval, defaultMaxRetryTimeout)
 }
 
-// GetNodeGroupImpl returns the NodeGroupImpl for the given fully-qualified machine name.
-func (m *McmManager) GetNodeGroupImpl(machineKey types.NamespacedName) (*NodeGroupImpl, error) {
+// getNodeGroup returns the NodeGroup for the given fully-qualified machine name.
+func (m *McmManager) getNodeGroup(machineKey types.NamespacedName) (*nodeGroup, error) {
 	if machineKey.Name == "" {
 		// Considering the possibility when Machine has been deleted but due to cached Node object it appears here.
 		return nil, fmt.Errorf("node does not Exists")
@@ -452,7 +452,7 @@ func (m *McmManager) GetMachineDeploymentSize(nodeGroupName string) (int64, erro
 }
 
 // SetMachineDeploymentSize sets the desired size for the backing MachineDeployment of the given nodeGroup.
-func (m *McmManager) SetMachineDeploymentSize(ctx context.Context, nodeGroup *NodeGroupImpl, size int64) (bool, error) {
+func (m *McmManager) SetMachineDeploymentSize(ctx context.Context, nodeGroup *nodeGroup, size int64) (bool, error) {
 	md, err := m.GetMachineDeploymentObject(nodeGroup.Name)
 	if err != nil {
 		return true, err
@@ -1039,19 +1039,19 @@ func buildGenericLabels(template *nodeTemplate, nodeName string) map[string]stri
 	return result
 }
 
-func buildNodeGroupImplFromSpec(value string, mcmManager *McmManager) (*NodeGroupImpl, error) {
+func buildNodeGroupFromSpec(value string, mcmManager *McmManager) (*nodeGroup, error) {
 	spec, err := dynamic.SpecFromString(value, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse node group spec: %v", err)
 	}
 	s := strings.Split(spec.Name, ".")
 	Namespace, Name := s[0], s[1]
-	nodeGroup := buildNodeGroupImpl(mcmManager, spec.MinSize, spec.MaxSize, Namespace, Name)
+	nodeGroup := buildNodeGroup(mcmManager, spec.MinSize, spec.MaxSize, Namespace, Name)
 	return nodeGroup, nil
 }
 
-func buildNodeGroupImpl(mcmManager *McmManager, minSize int, maxSize int, namespace string, name string) *NodeGroupImpl {
-	return &NodeGroupImpl{
+func buildNodeGroup(mcmManager *McmManager, minSize int, maxSize int, namespace string, name string) *nodeGroup {
+	return &nodeGroup{
 		mcmManager:   mcmManager,
 		minSize:      minSize,
 		maxSize:      maxSize,
