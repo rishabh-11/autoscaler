@@ -74,6 +74,8 @@ type mcmCloudProvider struct {
 	resourceLimiter *cloudprovider.ResourceLimiter
 }
 
+var _ cloudprovider.CloudProvider = (*mcmCloudProvider)(nil)
+
 // BuildMcmCloudProvider builds CloudProvider implementation for machine-controller-manager.
 func BuildMcmCloudProvider(mcmManager *McmManager, resourceLimiter *cloudprovider.ResourceLimiter) (cloudprovider.CloudProvider, error) {
 	if mcmManager.discoveryOpts.StaticDiscoverySpecified() {
@@ -238,6 +240,8 @@ type nodeGroup struct {
 	maxSize      int
 }
 
+var _ cloudprovider.NodeGroup = (*nodeGroup)(nil)
+
 // MaxSize returns maximum size of the node group.
 func (ngImpl *nodeGroup) MaxSize() int {
 	return ngImpl.maxSize
@@ -358,21 +362,21 @@ func (ngImpl *nodeGroup) Refresh() error {
 	return nil
 }
 
-// Belongs checks if the given node belongs to this NodeGroup and also returns its MachineInfo for its corresponding Machine
-func (ngImpl *nodeGroup) Belongs(node *apiv1.Node) (belongs bool, mInfo *machineInfo, err error) {
+// belongs checks if the given node belongs to this NodeGroup and also returns its MachineInfo for its corresponding Machine
+func (ngImpl *nodeGroup) belongs(node *apiv1.Node) (belongs bool, mInfo *machineInfo, err error) {
 	mInfo, err = ngImpl.mcmManager.getMachineInfo(node)
 	if err != nil || mInfo == nil {
 		return
 	}
-	targetMd, err := ngImpl.mcmManager.getNodeGroup(mInfo.Key)
+	targetNg, err := ngImpl.mcmManager.getNodeGroup(mInfo.Key)
 	if err != nil {
 		return
 	}
-	if targetMd == nil {
+	if targetNg == nil {
 		err = fmt.Errorf("%s doesn't belong to a known MachinDeployment", node.Name)
 		return
 	}
-	if targetMd.Id() == ngImpl.Id() {
+	if targetNg.Id() == ngImpl.Id() {
 		belongs = true
 	}
 	return
@@ -391,7 +395,7 @@ func (ngImpl *nodeGroup) DeleteNodes(nodes []*apiv1.Node) error {
 	}
 	var toBeDeletedMachineInfos []machineInfo
 	for _, node := range nodes {
-		belongs, mInfo, err := ngImpl.Belongs(node)
+		belongs, mInfo, err := ngImpl.belongs(node)
 		if err != nil {
 			return err
 		} else if !belongs {
