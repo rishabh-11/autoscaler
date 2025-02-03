@@ -393,7 +393,7 @@ func (ngImpl *nodeGroup) DeleteNodes(nodes []*apiv1.Node) error {
 	if int(size) <= ngImpl.MinSize() {
 		return fmt.Errorf("min size reached, nodes will not be deleted")
 	}
-	var toBeDeletedMachineInfos []machineInfo
+	var toBeDeletedMachineInfos = make([]machineInfo, 0, len(nodes))
 	for _, node := range nodes {
 		belongs, mInfo, err := ngImpl.belongs(node)
 		if err != nil {
@@ -412,10 +412,12 @@ func (ngImpl *nodeGroup) DeleteNodes(nodes []*apiv1.Node) error {
 
 // deleteMachines annotates the corresponding MachineDeployment with machine names of toBeDeletedMachineInfos, reduces the desired replicas of the corresponding MachineDeployment and cordons corresponding nodes belonging to toBeDeletedMachineInfos
 func (ngImpl *nodeGroup) deleteMachines(toBeDeletedMachineInfos []machineInfo) error {
-	if len(toBeDeletedMachineInfos) == 0 {
+	numDeletionCandidates := len(toBeDeletedMachineInfos)
+	if numDeletionCandidates == 0 {
 		return nil
 	}
-	var toBeDeletedMachineNames, toBeDeletedNodeNames []string
+	toBeDeletedMachineNames := make([]string, 0, numDeletionCandidates)
+	toBeDeletedNodeNames := make([]string, 0, numDeletionCandidates)
 	for _, mInfo := range toBeDeletedMachineInfos {
 		toBeDeletedMachineNames = append(toBeDeletedMachineNames, mInfo.Key.Name)
 		toBeDeletedNodeNames = append(toBeDeletedNodeNames, mInfo.NodeName)
@@ -438,7 +440,7 @@ func (ngImpl *nodeGroup) deleteMachines(toBeDeletedMachineInfos []machineInfo) e
 		return ngImpl.mcmManager.scaleDownMachineDeployment(ctx, ngImpl.Name, toBeDeletedMachineNames)
 	}, "MachineDeployment", "update", ngImpl.Name)
 	if err != nil {
-		klog.Errorf("Unable to scale down MachineDeployment %s by %d and delete machines %q due to: %v", ngImpl.Name, len(toBeDeletedMachineNames), toBeDeletedMachineNames, err)
+		klog.Errorf("Unable to scale down MachineDeployment %s by %d and delete machines %q due to: %v", ngImpl.Name, numDeletionCandidates, toBeDeletedMachineNames, err)
 		return fmt.Errorf("for NodeGroup %q, cannot scale down due to: %w", ngImpl.Name, err)
 	}
 	err = ngImpl.mcmManager.cordonNodes(toBeDeletedNodeNames)
