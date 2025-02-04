@@ -581,7 +581,7 @@ func TestGetOptions(t *testing.T) {
 				nodeGroups: []string{nodeGroup1},
 			},
 			expect{
-				err: fmt.Errorf("unable to fetch MachineDeployment object machinedeployment-1, Error: machinedeployment.machine.sapcloud.io \"machinedeployment-1\" not found"),
+				err: fmt.Errorf("unable to fetch MachineDeployment object \"machinedeployment-1\", Error: machinedeployment.machine.sapcloud.io \"machinedeployment-1\" not found"),
 			},
 		},
 		{

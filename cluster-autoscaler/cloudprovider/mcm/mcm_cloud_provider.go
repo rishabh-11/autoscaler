@@ -207,10 +207,10 @@ func (mcm *mcmCloudProvider) checkMCMAvailableReplicas() error {
 // Refresh is called before every main loop and can be used to dynamically update cloud provider state.
 // In particular the list of node groups returned by NodeGroups can change as a result of CloudProvider.Refresh().
 func (mcm *mcmCloudProvider) Refresh() error {
-	//err := mcm.checkMCMAvailableReplicas()
-	//if err != nil {
-	//	return err
-	//}
+	err := mcm.checkMCMAvailableReplicas()
+	if err != nil {
+		return err
+	}
 	return mcm.mcmManager.Refresh()
 }
 
