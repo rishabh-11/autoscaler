@@ -231,7 +231,7 @@ func TestComputeScaledownData(t *testing.T) {
 		md.Annotations = map[string]string{}
 
 		machineNamesForDeletion := []string{"n1"}
-		data := computeScaledownData(md, machineNamesForDeletion)
+		data := computeScaleDownData(md, machineNamesForDeletion)
 		assert.Equal(t, createMachinesTriggeredForDeletionAnnotValue(machineNamesForDeletion), data.RevisedMachineDeployment.Annotations[machineutils.TriggerDeletionByMCM])
 		assert.Equal(t, len(machineNamesForDeletion), data.RevisedScaledownAmount)
 		assert.Equal(t, int32(2-len(machineNamesForDeletion)), data.RevisedMachineDeployment.Spec.Replicas)
@@ -243,7 +243,7 @@ func TestComputeScaledownData(t *testing.T) {
 		md.Annotations = map[string]string{}
 
 		machineNamesForDeletion := []string{"n1"}
-		data := computeScaledownData(md, machineNamesForDeletion)
+		data := computeScaleDownData(md, machineNamesForDeletion)
 		assert.Equal(t, createMachinesTriggeredForDeletionAnnotValue(machineNamesForDeletion), data.RevisedMachineDeployment.Annotations[machineutils.TriggerDeletionByMCM])
 		assert.Equal(t, len(machineNamesForDeletion), data.RevisedScaledownAmount)
 
@@ -251,8 +251,8 @@ func TestComputeScaledownData(t *testing.T) {
 		assert.Equal(t, expectedReplicas, data.RevisedMachineDeployment.Spec.Replicas)
 
 		md = data.RevisedMachineDeployment
-		// repeating computeScaledownData for same machineNamesForDeletion should have 0 RevisedScaledownAmount, empty RevisedToBeDeletedNames, and nil RevisedMachineDeployment
-		data = computeScaledownData(md, machineNamesForDeletion)
+		// repeating computeScaleDownData for same machineNamesForDeletion should have 0 RevisedScaledownAmount, empty RevisedToBeDeletedNames, and nil RevisedMachineDeployment
+		data = computeScaleDownData(md, machineNamesForDeletion)
 		assert.Equal(t, 0, data.RevisedScaledownAmount)
 		assert.Empty(t, data.RevisedToBeDeletedNames)
 		assert.Nil(t, data.RevisedMachineDeployment)
@@ -265,15 +265,15 @@ func TestComputeScaledownData(t *testing.T) {
 		md.Annotations = map[string]string{}
 
 		machineNamesForDeletion := []string{"n1", "n2"}
-		data := computeScaledownData(md, machineNamesForDeletion)
+		data := computeScaleDownData(md, machineNamesForDeletion)
 		assert.Equal(t, createMachinesTriggeredForDeletionAnnotValue(machineNamesForDeletion), data.RevisedMachineDeployment.Annotations[machineutils.TriggerDeletionByMCM])
 		assert.Equal(t, len(machineNamesForDeletion), data.RevisedScaledownAmount)
 		expectedReplicas := int32(initialReplicas - len(machineNamesForDeletion))
 		assert.Equal(t, expectedReplicas, data.RevisedMachineDeployment.Spec.Replicas)
 
 		md = data.RevisedMachineDeployment
-		// repeating computeScaledownData for same machineNamesForDeletion should have 0 RevisedScaledownAmount, empty RevisedToBeDeletedNames, and nil RevisedMachineDeployment
-		data = computeScaledownData(md, machineNamesForDeletion)
+		// repeating computeScaleDownData for same machineNamesForDeletion should have 0 RevisedScaledownAmount, empty RevisedToBeDeletedNames, and nil RevisedMachineDeployment
+		data = computeScaleDownData(md, machineNamesForDeletion)
 		assert.Equal(t, 0, data.RevisedScaledownAmount)
 		assert.Empty(t, data.RevisedToBeDeletedNames)
 		assert.Nil(t, data.RevisedMachineDeployment)
@@ -286,7 +286,7 @@ func TestComputeScaledownData(t *testing.T) {
 		md.Annotations = map[string]string{}
 
 		machineNamesForDeletion := sets.New("n1", "n2")
-		data := computeScaledownData(md, machineNamesForDeletion.UnsortedList())
+		data := computeScaleDownData(md, machineNamesForDeletion.UnsortedList())
 		assert.Equal(t, createMachinesTriggeredForDeletionAnnotValue(machineNamesForDeletion.UnsortedList()), data.RevisedMachineDeployment.Annotations[machineutils.TriggerDeletionByMCM])
 		assert.Equal(t, len(machineNamesForDeletion), data.RevisedScaledownAmount)
 		expectedReplicas := int32(initialReplicas - len(machineNamesForDeletion))
@@ -294,7 +294,7 @@ func TestComputeScaledownData(t *testing.T) {
 
 		newMachineNamesForDeletion := sets.New("n2", "n3", "n4")
 		md = data.RevisedMachineDeployment
-		data = computeScaledownData(md, newMachineNamesForDeletion.UnsortedList())
+		data = computeScaleDownData(md, newMachineNamesForDeletion.UnsortedList())
 		assert.NotNil(t, data.RevisedMachineDeployment)
 		uniqueMachinesNamesForDeletion := newMachineNamesForDeletion.Difference(machineNamesForDeletion)
 		assert.Equal(t, uniqueMachinesNamesForDeletion.Len(), data.RevisedScaledownAmount)

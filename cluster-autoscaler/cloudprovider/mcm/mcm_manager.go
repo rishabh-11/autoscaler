@@ -507,7 +507,7 @@ func (m *McmManager) scaleDownMachineDeployment(ctx context.Context, mdName stri
 		return true, err
 	}
 
-	data := computeScaledownData(md, toBeDeletedMachineNames)
+	data := computeScaleDownData(md, toBeDeletedMachineNames)
 	if data.RevisedScaledownAmount == 0 {
 		klog.V(3).Infof("Skipping scaledown since MachineDeployment %q has already marked %v for deletion by MCM, skipping the scale-down", md.Name, toBeDeletedMachineNames)
 		return false, nil
@@ -1076,8 +1076,9 @@ func filterExtendedResources(allResources v1.ResourceList) (extendedResources v1
 	return
 }
 
-// computeScaledownData computes fresh scaleDownData for the given MachineDeployment given the machineNamesForDeletion
-func computeScaledownData(md *v1alpha1.MachineDeployment, machineNamesForDeletion []string) (data scaleDownData) {
+// computeScaleDownData computes fresh scaleDownData for the given input MachineDeployment and the machineNamesForDeletion.
+// The output scaleDownData encapsulates the scale-down amount and an updated, non-nil MachineDeployment.
+func computeScaleDownData(md *v1alpha1.MachineDeployment, machineNamesForDeletion []string) (data scaleDownData) {
 	forDeletionSet := sets.New(machineNamesForDeletion...)
 	alreadyMarkedSet := sets.New(getMachineNamesTriggeredForDeletion(md)...)
 
