@@ -32,6 +32,7 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/autoscaler/cluster-autoscaler/config/dynamic"
+	"k8s.io/autoscaler/cluster-autoscaler/core/scaledown/eligibility"
 	v1appslister "k8s.io/client-go/listers/apps/v1"
 	"k8s.io/utils/pointer"
 	"maps"
@@ -169,10 +170,14 @@ type machineInfo struct {
 	FailedOrTerminating bool
 }
 
+func (m machineInfo) String() string {
+	return fmt.Sprintf("(%s|%s)", m.Key, m.NodeName)
+}
+
 type scaleDownData struct {
-	RevisedToBeDeletedNames  sets.Set[string]
-	RevisedScaledownAmount   int
-	RevisedMachineDeployment *v1alpha1.MachineDeployment
+	RevisedToBeDeletedMachineNames sets.Set[string]
+	RevisedScaledownAmount         int
+	RevisedMachineDeployment       *v1alpha1.MachineDeployment
 }
 
 func init() {
@@ -322,12 +327,12 @@ func (m *McmManager) generateMachineDeploymentMap() error {
 // addNodeGroup adds node group defined in string spec. Format:
 // minNodes:maxNodes:namespace.machineDeploymentName
 func (m *McmManager) addNodeGroup(spec string) error {
-	nodeGroup, err := buildNodeGroupFromSpec(spec, m)
+	ng, err := buildNodeGroupFromSpec(spec, m)
 	if err != nil {
 		return err
 	}
-	key := types.NamespacedName{Namespace: nodeGroup.Namespace, Name: nodeGroup.Name}
-	m.nodeGroups[key] = nodeGroup
+	key := types.NamespacedName{Namespace: ng.Namespace, Name: ng.Name}
+	m.nodeGroups[key] = ng
 	return nil
 }
 
@@ -425,19 +430,19 @@ func (m *McmManager) getNodeGroup(machineKey types.NamespacedName) (*nodeGroup, 
 		return nil, fmt.Errorf("unable to find parent MachineDeployment of given MachineSet name %q due to: %w", machineSetName, err)
 	}
 
-	machineDeployment, ok := m.nodeGroups[types.NamespacedName{Namespace: m.namespace, Name: machineDeploymentName}]
+	lookupKey := types.NamespacedName{Namespace: m.namespace, Name: machineDeploymentName}
+	ng, ok := m.nodeGroups[lookupKey]
 	if !ok {
-		return nil, fmt.Errorf("could not find MachineDeployment %q in the managed nodeGroups", machineDeploymentName)
+		return nil, fmt.Errorf("could not find NodeGroup for MachineDeployment %q in the managed nodeGroups", machineDeploymentName)
 	}
-	return machineDeployment, nil
+	return ng, nil
 }
 
-// Refresh method, for each machine deployment, will reset the priority of the machines if the number of annotated machines is more than desired.
-// It will select the machines to reset the priority based on the descending order of creation timestamp.
+// Refresh method for the McmManager that will invoke NodeGroup.Refresh for each node gorup and return collected errors.
 func (m *McmManager) Refresh() error {
 	var collectiveError []error
-	for _, nodeGroup := range m.nodeGroups {
-		collectiveError = append(collectiveError, nodeGroup.Refresh())
+	for _, ng := range m.nodeGroups {
+		collectiveError = append(collectiveError, ng.Refresh())
 	}
 	return errors.Join(collectiveError...)
 }
@@ -501,10 +506,17 @@ func (m *McmManager) updateAnnotationOnMachine(ctx context.Context, mcName strin
 // are already marked for deletion in the machineutils.TriggerDeletionByMCM of the MachineDeployment.
 // It then updates the machineutils.TriggerDeletionByMCM annotation with revised toBeDeletedMachineNames along with the replica count as a atomic operation.
 // NOTE: Callers MUST take the NodeGroup scalingMutex before invoking this method.
-func (m *McmManager) scaleDownMachineDeployment(ctx context.Context, mdName string, toBeDeletedMachineNames []string) (bool, error) {
+func (m *McmManager) scaleDownMachineDeployment(ctx context.Context, mdName string, toBeDeletedMachineInfos []machineInfo) (bool, error) {
 	md, err := m.GetMachineDeploymentObject(mdName)
 	if err != nil {
 		return true, err
+	}
+
+	numDeletionCandidates := len(toBeDeletedMachineInfos)
+	toBeDeletedMachineNames := make([]string, 0, numDeletionCandidates)
+
+	for _, mInfo := range toBeDeletedMachineInfos {
+		toBeDeletedMachineNames = append(toBeDeletedMachineNames, mInfo.Key.Name)
 	}
 
 	data := computeScaleDownData(md, toBeDeletedMachineNames)
@@ -521,7 +533,20 @@ func (m *McmManager) scaleDownMachineDeployment(ctx context.Context, mdName stri
 	if err != nil {
 		return true, err
 	}
-	klog.V(2).Infof("MachineDeployment %s size decreased from %d to %d, TriggerDeletionByMCM Annotation Value: %q", md.Name, md.Spec.Replicas, updatedMd.Spec.Replicas, updatedMd.Annotations[machineutils.TriggerDeletionByMCM])
+	klog.V(2).Infof("MachineDeployment %q size decreased from %d to %d, TriggerDeletionByMCM Annotation Value: %q", md.Name, md.Spec.Replicas, updatedMd.Spec.Replicas, updatedMd.Annotations[machineutils.TriggerDeletionByMCM])
+
+	toBeCordonedNodeNames := make([]string, 0, len(data.RevisedToBeDeletedMachineNames))
+	for _, mInfo := range toBeDeletedMachineInfos {
+		if data.RevisedToBeDeletedMachineNames.Has(mInfo.Key.Name) {
+			toBeCordonedNodeNames = append(toBeCordonedNodeNames, mInfo.NodeName)
+			klog.V(2).Infof("For MachineDeployment %q, will cordon node: %q corresponding to machine %q", md.Name, mInfo.NodeName, mInfo.Key.Name)
+		}
+	}
+	err = m.cordonNodes(toBeCordonedNodeNames)
+	if err != nil {
+		// Do not return error as cordoning is best-effort
+		klog.Warningf("NodeGroup.deleteMachines() of %q ran into error cordoning nodes: %v", md.Name, err)
+	}
 	return false, nil
 }
 
@@ -809,8 +834,8 @@ func (m *McmManager) GetMachineDeploymentNodeTemplate(nodeGroupName string) (*no
 func (m *McmManager) GetMachineDeploymentObject(mdName string) (*v1alpha1.MachineDeployment, error) {
 	md, err := m.machineDeploymentLister.MachineDeployments(m.namespace).Get(mdName)
 	if err != nil {
-		klog.Errorf("unable to fetch MachineDeployment object %s, Error: %v", mdName, err)
-		return nil, fmt.Errorf("unable to fetch MachineDeployment object %s, Error: %v", mdName, err)
+		klog.Errorf("unable to fetch MachineDeployment object %q, Error: %v", mdName, err)
+		return nil, fmt.Errorf("unable to fetch MachineDeployment object %q, Error: %v", mdName, err)
 	}
 	return md, nil
 }
@@ -956,6 +981,10 @@ func (m *McmManager) cordonNodes(nodeNames []string) error {
 			klog.V(4).Infof("Node %q is already cordoned", nodeName)
 			continue
 		}
+		if eligibility.HasNoScaleDownAnnotation(node) {
+			klog.V(4).Infof("Node %q is marked with ScaleDownDisabledAnnotation %q", nodeName, eligibility.ScaleDownDisabledKey)
+			continue
+		}
 		adjustNode := node.DeepCopy()
 		adjustNode.Spec.Unschedulable = true
 		_, err = m.nodeInterface.Update(ctx, adjustNode, metav1.UpdateOptions{})
@@ -1041,8 +1070,8 @@ func buildNodeGroupFromSpec(value string, mcmManager *McmManager) (*nodeGroup, e
 	}
 	s := strings.Split(spec.Name, ".")
 	Namespace, Name := s[0], s[1]
-	nodeGroup := buildNodeGroup(mcmManager, spec.MinSize, spec.MaxSize, Namespace, Name)
-	return nodeGroup, nil
+	ng := buildNodeGroup(mcmManager, spec.MinSize, spec.MaxSize, Namespace, Name)
+	return ng, nil
 }
 
 func buildNodeGroup(mcmManager *McmManager, minSize int, maxSize int, namespace string, name string) *nodeGroup {
@@ -1085,7 +1114,7 @@ func computeScaleDownData(md *v1alpha1.MachineDeployment, machineNamesForDeletio
 	uniqueForDeletionSet := forDeletionSet.Difference(alreadyMarkedSet)
 	toBeMarkedSet := alreadyMarkedSet.Union(forDeletionSet)
 
-	data.RevisedToBeDeletedNames = uniqueForDeletionSet
+	data.RevisedToBeDeletedMachineNames = uniqueForDeletionSet
 	data.RevisedScaledownAmount = uniqueForDeletionSet.Len()
 	data.RevisedMachineDeployment = nil
 

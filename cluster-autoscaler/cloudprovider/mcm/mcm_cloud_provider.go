@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"github.com/gardener/machine-controller-manager/pkg/apis/machine/v1alpha1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/autoscaler/cluster-autoscaler/core/scaledown/eligibility"
 	"slices"
 	"strconv"
 	"strings"
@@ -206,10 +207,10 @@ func (mcm *mcmCloudProvider) checkMCMAvailableReplicas() error {
 // Refresh is called before every main loop and can be used to dynamically update cloud provider state.
 // In particular the list of node groups returned by NodeGroups can change as a result of CloudProvider.Refresh().
 func (mcm *mcmCloudProvider) Refresh() error {
-	err := mcm.checkMCMAvailableReplicas()
-	if err != nil {
-		return err
-	}
+	//err := mcm.checkMCMAvailableReplicas()
+	//if err != nil {
+	//	return err
+	//}
 	return mcm.mcmManager.Refresh()
 }
 
@@ -405,6 +406,10 @@ func (ngImpl *nodeGroup) DeleteNodes(nodes []*apiv1.Node) error {
 			klog.V(3).Infof("for NodeGroup %q, Machine %q is already marked as terminating - skipping deletion", ngImpl.Name, mInfo.Key.Name)
 			continue
 		}
+		if eligibility.HasNoScaleDownAnnotation(node) {
+			klog.V(4).Infof("for NodeGroup %q, Node %q corresponding to Machine %q is marked with ScaleDownDisabledAnnotation %q - skipping deletion", ngImpl.Name, node.Name, mInfo.Key.Name, eligibility.ScaleDownDisabledKey)
+			continue
+		}
 		toBeDeletedMachineInfos = append(toBeDeletedMachineInfos, *mInfo)
 	}
 	return ngImpl.deleteMachines(toBeDeletedMachineInfos)
@@ -416,14 +421,8 @@ func (ngImpl *nodeGroup) deleteMachines(toBeDeletedMachineInfos []machineInfo) e
 	if numDeletionCandidates == 0 {
 		return nil
 	}
-	toBeDeletedMachineNames := make([]string, 0, numDeletionCandidates)
-	toBeDeletedNodeNames := make([]string, 0, numDeletionCandidates)
-	for _, mInfo := range toBeDeletedMachineInfos {
-		toBeDeletedMachineNames = append(toBeDeletedMachineNames, mInfo.Key.Name)
-		toBeDeletedNodeNames = append(toBeDeletedNodeNames, mInfo.NodeName)
-	}
 
-	release := ngImpl.AcquireScalingMutex(fmt.Sprintf("deleteMachines for %q", toBeDeletedMachineNames))
+	release := ngImpl.AcquireScalingMutex(fmt.Sprintf("deleteMachines for %s", toBeDeletedMachineInfos))
 	defer release()
 
 	// get the machine deployment and return if rolling update is not finished
@@ -437,16 +436,11 @@ func (ngImpl *nodeGroup) deleteMachines(toBeDeletedMachineInfos []machineInfo) e
 
 	// Trying to update the machineDeployment till the deadline
 	err = ngImpl.mcmManager.retry(func(ctx context.Context) (bool, error) {
-		return ngImpl.mcmManager.scaleDownMachineDeployment(ctx, ngImpl.Name, toBeDeletedMachineNames)
+		return ngImpl.mcmManager.scaleDownMachineDeployment(ctx, ngImpl.Name, toBeDeletedMachineInfos)
 	}, "MachineDeployment", "update", ngImpl.Name)
 	if err != nil {
-		klog.Errorf("Unable to scale down MachineDeployment %s by %d and delete machines %q due to: %v", ngImpl.Name, numDeletionCandidates, toBeDeletedMachineNames, err)
+		klog.Errorf("Unable to scale down MachineDeployment %s by %d and delete machines %q due to: %v", ngImpl.Name, numDeletionCandidates, toBeDeletedMachineInfos, err)
 		return fmt.Errorf("for NodeGroup %q, cannot scale down due to: %w", ngImpl.Name, err)
-	}
-	err = ngImpl.mcmManager.cordonNodes(toBeDeletedNodeNames)
-	if err != nil {
-		// Do not return error as cordoning is best-effort
-		klog.Warningf("NodeGroup.deleteMachines() of %q ran into error cordoning nodes: %v", ngImpl.Name, err)
 	}
 	return nil
 }

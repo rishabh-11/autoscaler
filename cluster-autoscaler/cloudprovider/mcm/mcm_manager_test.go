@@ -251,10 +251,10 @@ func TestComputeScaledownData(t *testing.T) {
 		assert.Equal(t, expectedReplicas, data.RevisedMachineDeployment.Spec.Replicas)
 
 		md = data.RevisedMachineDeployment
-		// repeating computeScaleDownData for same machineNamesForDeletion should have 0 RevisedScaledownAmount, empty RevisedToBeDeletedNames, and nil RevisedMachineDeployment
+		// repeating computeScaleDownData for same machineNamesForDeletion should have 0 RevisedScaledownAmount, empty RevisedToBeDeletedMachineNames, and nil RevisedMachineDeployment
 		data = computeScaleDownData(md, machineNamesForDeletion)
 		assert.Equal(t, 0, data.RevisedScaledownAmount)
-		assert.Empty(t, data.RevisedToBeDeletedNames)
+		assert.Empty(t, data.RevisedToBeDeletedMachineNames)
 		assert.Nil(t, data.RevisedMachineDeployment)
 
 	})
@@ -272,10 +272,10 @@ func TestComputeScaledownData(t *testing.T) {
 		assert.Equal(t, expectedReplicas, data.RevisedMachineDeployment.Spec.Replicas)
 
 		md = data.RevisedMachineDeployment
-		// repeating computeScaleDownData for same machineNamesForDeletion should have 0 RevisedScaledownAmount, empty RevisedToBeDeletedNames, and nil RevisedMachineDeployment
+		// repeating computeScaleDownData for same machineNamesForDeletion should have 0 RevisedScaledownAmount, empty RevisedToBeDeletedMachineNames, and nil RevisedMachineDeployment
 		data = computeScaleDownData(md, machineNamesForDeletion)
 		assert.Equal(t, 0, data.RevisedScaledownAmount)
-		assert.Empty(t, data.RevisedToBeDeletedNames)
+		assert.Empty(t, data.RevisedToBeDeletedMachineNames)
 		assert.Nil(t, data.RevisedMachineDeployment)
 
 	})
@@ -298,7 +298,7 @@ func TestComputeScaledownData(t *testing.T) {
 		assert.NotNil(t, data.RevisedMachineDeployment)
 		uniqueMachinesNamesForDeletion := newMachineNamesForDeletion.Difference(machineNamesForDeletion)
 		assert.Equal(t, uniqueMachinesNamesForDeletion.Len(), data.RevisedScaledownAmount)
-		assert.Equal(t, uniqueMachinesNamesForDeletion, data.RevisedToBeDeletedNames)
+		assert.Equal(t, uniqueMachinesNamesForDeletion, data.RevisedToBeDeletedMachineNames)
 		expectedReplicas = int32(initialReplicas - machineNamesForDeletion.Union(newMachineNamesForDeletion).Len())
 		assert.Equal(t, expectedReplicas, data.RevisedMachineDeployment.Spec.Replicas)
 
